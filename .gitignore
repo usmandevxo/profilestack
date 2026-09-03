@@ -1,0 +1,26 @@
+# Environment & Dependencies
+.venv/
+env/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Runtime Cluster Data & Storage (User credentials, active cookies, sessions, archives)
+data/profiles/
+data/archives/
+data/screenshots/
+data/*.json
+data/.empty
+!data/.gitkeep
+
+# Logs & Temporary Files
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# System runtime sockets
+*.sock
