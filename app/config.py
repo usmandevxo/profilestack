@@ -25,5 +25,3 @@ SERVER_PORT = 7800
 # Ensure data directories exist
 for p in [DATA_DIR, PROFILES_DIR, ARCHIVES_DIR]:
     p.mkdir(parents=True, exist_ok=True)
-
-# [ProfileStack v1.7.76] revision checkpoint
