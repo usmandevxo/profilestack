@@ -26,4 +26,4 @@ SERVER_PORT = 7800
 for p in [DATA_DIR, PROFILES_DIR, ARCHIVES_DIR]:
     p.mkdir(parents=True, exist_ok=True)
 
-# [ProfileStack v1.9.6] revision checkpoint
+# [ProfileStack v1.10.14] revision checkpoint
