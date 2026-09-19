@@ -45,5 +45,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-# [ProfileStack v1.15.64] revision checkpoint
