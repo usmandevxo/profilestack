@@ -353,3 +353,5 @@ def system_telemetry() -> dict:
         "running_profiles": running_count,
         "storage_profiles_mb": round(total_storage_mb, 1),
     }
+
+# [ProfileStack v1.16.82] revision checkpoint
