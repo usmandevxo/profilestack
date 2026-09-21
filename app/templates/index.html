@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProfileStack - Anti-Detect Browser Cluster</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=20261003_dir2">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=20261003_dir2">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png?v=20261003_dir2">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=20261003_dir2">
+  <link rel="shortcut icon" href="/favicon.ico?v=20261003_dir2">
+  <link rel="stylesheet" href="/static/css/style.css?v=20261003_v4_metrics">
+</head>
+<body>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar-drawer">
+      <div class="sidebar-header">
+        <div class="logo-icon" style="background:none; border:none; padding:0; box-shadow:none; width:36px; height:36px;">
+          <img src="/static/img/logo.svg" alt="ProfileStack Mark" width="36" height="36" style="display:block;">
+        </div>
+        <div class="logo-text">
+          <h1>ProfileStack</h1>
+          <p>Browser Cluster</p>
+        </div>
+        <button class="btn-icon mobile-drawer-close" id="btn-mobile-close" aria-label="Close Navigation" style="margin-left:auto;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <span class="nav-label">Views</span>
+        <button class="nav-link active" data-filter="all">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          All Profiles
+          <span class="nav-count" id="badge-count-all">0</span>
+        </button>
+        <button class="nav-link" data-filter="running">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          Active Running
+          <span class="nav-count" id="badge-count-running">0</span>
+        </button>
+        <button class="nav-link" data-filter="stopped">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="6" y="6" width="12" height="12"></rect>
+          </svg>
+          Stopped
+          <span class="nav-count" id="badge-count-stopped">0</span>
+        </button>
+
+        <div class="sidebar-section-header">
+          <span class="nav-label" style="padding:0; margin:0;">Folders</span>
+          <button class="btn-folder-add" id="btn-add-folder" title="Create New Folder">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>Add</span>
+          </button>
+        </div>
+        <div id="sidebar-folders-list" class="sidebar-folders-list"></div>
+
+        <span class="nav-label" style="margin-top:16px;">Tools</span>
+        <button class="nav-link" id="btn-mcp-config" style="color: var(--primary);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"></path>
+            <path d="M16 10v1a6 6 0 0 1-12 0v-1"></path>
+            <path d="M12 19v3"></path>
+            <path d="M8 22h8"></path>
+          </svg>
+          MCP AI Setup
+          <span class="nav-mcp-badge">SSE</span>
+        </button>
+        <button class="nav-link" id="btn-manage-proxies">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          Proxy Catalog
+        </button>
+        <button class="nav-link" id="btn-import-profile">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Import Archive
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="btn btn-primary" id="btn-new-profile" style="width:100%; justify-content:center;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          New Profile
+        </button>
+
+        <div style="display:flex; align-items:center; justify-content:space-between; padding-top:10px; border-top:1px solid var(--border); margin-top:6px;">
+          <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+            <div style="width:28px; height:28px; border-radius:50%; background:#e0f2fe; color:var(--primary); font-weight:700; font-size:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+              {{ (user.username[0] if user and user.username else 'U') | upper }}
+            </div>
+            <div style="font-size:12px; font-weight:600; color:var(--text-main); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">
+              {{ user.username if user and user.username else 'admin' }}
+            </div>
+          </div>
+          <a href="/logout" class="btn btn-secondary btn-sm" title="Sign Out" style="padding:4px 8px; font-size:11.5px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            Exit
+          </a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <header class="topbar">
+        <div class="topbar-title-wrap">
+          <button class="btn-icon mobile-menu-btn" id="btn-mobile-menu" aria-label="Open Navigation">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <div class="topbar-breadcrumb">
+            <span class="breadcrumb-root">Cluster</span>
+            <span class="breadcrumb-separator">/</span>
+            <h2 class="breadcrumb-current">Browser Profiles</h2>
+            <span class="cluster-status-pill">
+              <span class="cluster-pulse-dot"></span>
+              Online
+            </span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-primary btn-sm topbar-new-btn" id="btn-topbar-new" title="Create New Browser Profile">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>New Profile</span>
+          </button>
+          <button class="btn btn-secondary btn-sm" id="btn-topbar-import" title="Import Profile Archive">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span class="desktop-btn-label">Import</span>
+          </button>
+          <a href="/api/docs" target="_blank" class="btn btn-secondary btn-sm" title="View OpenAPI / Swagger Documentation">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            <span class="desktop-btn-label">API Docs</span>
+          </a>
+          <a href="/logout" class="btn btn-secondary btn-sm btn-nav-signout" title="Sign Out of ProfileStack">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span class="desktop-btn-label">Sign Out</span>
+          </a>
+        </div>
+      </header>
+
+      <div class="content-body">
+        <!-- Telemetry Ribbon -->
+        <div class="telemetry-grid">
+          <div class="metric-card">
+            <div class="metric-icon-wrap metric-icon-blue">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
+            </div>
+            <div class="metric-info">
+              <span class="metric-value" id="m-total-profiles">0</span>
+              <span class="metric-label">Total Profiles</span>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-icon-wrap metric-icon-green">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            </div>
+            <div class="metric-info">
+              <span class="metric-value" id="m-running-profiles">0</span>
+              <span class="metric-label">Active Containers</span>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-icon-wrap metric-icon-purple">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+              </svg>
+            </div>
+            <div class="metric-info">
+              <span class="metric-value" id="m-ram">0 / 0 GB</span>
+              <span class="metric-label">Server Memory Load</span>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-icon-wrap metric-icon-amber">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+              </svg>
+            </div>
+            <div class="metric-info">
+              <span class="metric-value" id="m-disk">0 MB</span>
+              <span class="metric-label">Profiles Storage</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Command Strip -->
+        <div class="command-strip">
+          <div class="search-input-wrap">
+            <span class="search-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </span>
+            <input type="text" id="search-input" class="search-input" placeholder="Search profiles, proxies, notes...">
+          </div>
+          <div class="folder-filter-dropdown-wrap">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            <select id="folder-filter-select" class="form-select folder-select-strip" title="Filter by Folder">
+              <option value="all">All Folders</option>
+            </select>
+          </div>
+          <div class="filter-pills-bar">
+            <button class="filter-pill active" data-pill-filter="all">All <span class="pill-count" id="pill-count-all">0</span></button>
+            <button class="filter-pill" data-pill-filter="running">Running <span class="pill-count" id="pill-count-running">0</span></button>
+            <button class="filter-pill" data-pill-filter="stopped">Stopped <span class="pill-count" id="pill-count-stopped">0</span></button>
+          </div>
+        </div>
+
+        <!-- Mobile Cards Feed (Rendered on mobile screens) -->
+        <div class="profiles-cards-feed" id="profiles-cards-feed"></div>
+
+        <!-- Profiles Table (Rendered on desktop screens) -->
+        <div class="table-card desktop-table-wrap">
+          <div class="table-responsive">
+            <table class="profiles-table">
+              <thead>
+                <tr>
+                  <th style="width: 28%; min-width: 230px;">Profile &amp; Identity</th>
+                  <th style="width: 14%; min-width: 130px;">Folder</th>
+                  <th style="width: 16%; min-width: 150px;">Status &amp; Ports</th>
+                  <th style="width: 18%; min-width: 160px;">Network / Proxy</th>
+                  <th style="width: 10%; min-width: 90px;">Disk</th>
+                  <th style="width: 14%; min-width: 170px; text-align: right;">Quick Actions</th>
+                </tr>
+              </thead>
+              <tbody id="profiles-tbody">
+                <!-- Dynamically rendered -->
+              </tbody>
+            </table>
+          </div>
+          <div class="empty-state" id="empty-state" style="display:none;">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <p>No browser profiles found. Click "New Profile" to create one.</p>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Create Profile Modal -->
+  <div class="modal-overlay" id="modal-create">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Create Browser Profile</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-create')" aria-label="Close dialog" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <form id="create-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Profile Identifier</label>
+            <input type="text" id="create-name" class="form-input" placeholder="e.g. fiverr-account1, upwork-store" required pattern="[a-zA-Z0-9_-]+" maxlength="64">
+            <span class="form-hint">Letters, numbers, hyphens, and underscores only.</span>
+          </div>
+
+          <div class="form-group">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+              <label class="form-label" style="margin-bottom:0;">Folder / Group</label>
+              <button type="button" class="btn-link-sm" id="btn-quick-create-folder" style="font-size:11.5px; background:none; border:none; color:var(--primary); cursor:pointer; font-weight:600;">+ New Folder</button>
+            </div>
+            <select id="create-folder-select" class="form-select" required></select>
+            <span class="form-hint">Organizes profile directory on disk and filters dashboard views.</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Proxy Assignment <span class="opt">(Optional)</span></label>
+            <select id="create-proxy-select" class="form-select"></select>
+            <input type="text" id="create-proxy-custom" class="form-input" placeholder="socks5://user:pass@host:port" style="display:none; margin-top:6px;">
+            <span class="form-hint">Enforces WebRTC leak protection and routes all outbound traffic.</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Initial Start URL <span class="opt">(Optional)</span></label>
+            <input type="url" id="create-start-url" class="form-input" placeholder="https://www.fiverr.com">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Host Folder Mount <span class="opt">(Read-only, Optional)</span></label>
+            <input type="text" id="create-host-mount" class="form-input" placeholder="/www/wwwroot/files">
+            <span class="form-hint">Mounted read-only inside container at /home/chrome/host</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Notes / Tag <span class="opt">(Optional)</span></label>
+            <input type="text" id="create-note" class="form-input" placeholder="Primary US Fiverr Seller Account">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-create')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Profile</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Profile Modal -->
+  <div class="modal-overlay" id="modal-edit">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="edit-modal-title">Edit Profile</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-edit')" aria-label="Close dialog" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <form id="edit-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Folder / Group</label>
+            <select id="edit-folder-select" class="form-select" required></select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Proxy Assignment <span class="opt">(Optional)</span></label>
+            <select id="edit-proxy-select" class="form-select"></select>
+            <input type="text" id="edit-proxy-custom" class="form-input" placeholder="socks5://user:pass@host:port" style="display:none; margin-top:6px;">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Initial Start URL <span class="opt">(Optional)</span></label>
+            <input type="url" id="edit-start-url" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Host Folder Mount <span class="opt">(Read-only, Optional)</span></label>
+            <input type="text" id="edit-host-mount" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Notes / Tag <span class="opt">(Optional)</span></label>
+            <input type="text" id="edit-note" class="form-input">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-edit')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Proxies Catalog Modal -->
+  <div class="modal-overlay" id="modal-proxies">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Proxy Catalog</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-proxies')" aria-label="Close dialog" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="proxies-list-container" style="max-height:220px; overflow-y:auto;"></div>
+
+        <form id="proxy-add-form" style="border-top:1px solid var(--border); padding-top:16px; margin-top:8px;">
+          <div style="font-weight:600; font-size:13px; margin-bottom:8px;">Add New Shared Proxy</div>
+          <div style="display:grid; grid-template-columns: 1fr 2fr 1fr auto; gap:8px; align-items:center;">
+            <input type="text" id="proxy-name-input" class="form-input" placeholder="Name (e.g. us-resi-1)" required>
+            <input type="text" id="proxy-url-input" class="form-input" placeholder="socks5://user:pass@host:port" required>
+            <input type="text" id="proxy-note-input" class="form-input" placeholder="Location tag">
+            <button type="submit" class="btn btn-primary btn-sm">Add</button>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-proxies')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Modal -->
+  <div class="modal-overlay" id="modal-import">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Import Profile Archive</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-import')" aria-label="Close dialog" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <form id="import-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Select Profile ZIP Archive</label>
+            <input type="file" id="import-file" class="form-input" accept=".zip" required>
+            <span class="form-hint">Uploads a previously exported ProfileStack archive.</span>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-import')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Import</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete Confirm Modal -->
+  <div class="modal-overlay" id="modal-delete">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Delete Profile</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-delete')" aria-label="Close dialog" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p id="delete-msg" style="font-size:13.5px; color:var(--text-main);"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-delete')">Cancel</button>
+        <button type="button" class="btn btn-danger" id="btn-confirm-delete">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Folder Modal -->
+  <div class="modal-overlay" id="modal-folder-create">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Create New Folder</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-folder-create')" aria-label="Close dialog" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <form id="folder-create-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Folder / Group Name</label>
+            <input type="text" id="folder-create-name" class="form-input" placeholder="e.g. Upwork Accounts, Scraping Bots" required maxlength="64">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description <span class="opt">(Optional)</span></label>
+            <input type="text" id="folder-create-desc" class="form-input" placeholder="Notes for this group">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Color Accent</label>
+            <div class="color-palette" id="folder-create-palette"></div>
+            <input type="hidden" id="folder-create-color" value="#2563eb">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-folder-create')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Folder</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Folder Modal -->
+  <div class="modal-overlay" id="modal-folder-edit">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Edit Folder</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-folder-edit')" aria-label="Close dialog" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <form id="folder-edit-form">
+        <input type="hidden" id="folder-edit-id">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Folder Name</label>
+            <input type="text" id="folder-edit-name" class="form-input" required maxlength="64">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description <span class="opt">(Optional)</span></label>
+            <input type="text" id="folder-edit-desc" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Color Accent</label>
+            <div class="color-palette" id="folder-edit-palette"></div>
+            <input type="hidden" id="folder-edit-color" value="#2563eb">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-folder-edit')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete Folder Modal -->
+  <div class="modal-overlay" id="modal-folder-delete">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Delete Folder</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-folder-delete')" aria-label="Close dialog" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p id="folder-delete-msg" style="font-size:13.5px; color:var(--text-main); margin-bottom:12px;"></p>
+        <div class="form-group">
+          <label class="form-label">Move Contained Profiles To:</label>
+          <select id="folder-delete-target-select" class="form-select"></select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-folder-delete')">Cancel</button>
+        <button type="button" class="btn btn-danger" id="btn-confirm-delete-folder">Delete Folder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MCP AI Configuration Modal -->
+  <div class="modal-overlay" id="modal-mcp-config">
+    <div class="modal modal-wide" style="max-width: 640px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="width: 32px; height: 32px; border-radius: 8px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"></path>
+              <path d="M16 10v1a6 6 0 0 1-12 0v-1"></path>
+              <path d="M12 19v3"></path>
+              <path d="M8 22h8"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 15.5px; font-weight: 700; color: var(--text-main);">Model Context Protocol (MCP 2.x) Setup</h3>
+            <p style="margin: 0; font-size: 11.5px; color: var(--text-muted);">Connect Claude, Cursor, Hermes, or custom agents with 24 cluster automation tools.</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" onclick="closeModal('modal-mcp-config')" aria-label="Close dialog" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body" style="padding: 20px 24px;">
+        <!-- Status Callout -->
+        <div style="display: flex; align-items: center; justify-content: space-between; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 10px 14px; margin-bottom: 18px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="cluster-pulse-dot"></span>
+            <span style="font-size: 13px; font-weight: 600; color: #065f46;">MCP Server Active &amp; Ready</span>
+            <span style="font-size: 11px; color: #047857; background: #d1fae5; padding: 1px 6px; border-radius: 4px; font-family: var(--font-mono);">Protocol v2.0.0</span>
+          </div>
+          <span style="font-size: 12px; font-weight: 600; color: #059669;">24 Autonomous Tools</span>
+        </div>
+
+        <!-- Endpoints List -->
+        <div style="margin-bottom: 16px;">
+          <label class="form-label" style="margin-bottom: 6px;">Server-Sent Events (SSE) Endpoint</label>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="mcp-sse-url" class="form-input" value="https://profilestack.apanel.eu.cc/mcp/sse" readonly style="font-family: var(--font-mono); font-size: 12px; background: #f8fafc;">
+            <button class="btn btn-secondary btn-sm" onclick="copyMcpInput('mcp-sse-url')" title="Copy SSE URL">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              Copy
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 18px;">
+          <label class="form-label" style="margin-bottom: 6px;">Local Stdio Transport Executable</label>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="mcp-stdio-cmd" class="form-input" value="/usr/local/bin/profilestack-mcp" readonly style="font-family: var(--font-mono); font-size: 12px; background: #f8fafc;">
+            <button class="btn btn-secondary btn-sm" onclick="copyMcpInput('mcp-stdio-cmd')" title="Copy CLI Path">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              Copy
+            </button>
+          </div>
+        </div>
+
+        <!-- Presets Segmented Tabs -->
+        <div>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <span class="form-label" style="margin: 0;">Client Configuration Snippet</span>
+            <div class="mcp-tab-group">
+              <button class="mcp-tab-btn active" id="tab-btn-claude" onclick="switchMcpTab('claude')">Claude Desktop</button>
+              <button class="mcp-tab-btn" id="tab-btn-cursor" onclick="switchMcpTab('cursor')">Cursor / Windsurf</button>
+              <button class="mcp-tab-btn" id="tab-btn-python" onclick="switchMcpTab('python')">Python SDK</button>
+            </div>
+          </div>
+
+          <!-- Tab Content: Claude Desktop -->
+          <div id="mcp-tab-claude" class="mcp-tab-panel active">
+            <pre class="mcp-code-block"><code id="code-claude">{
+  "mcpServers": {
+    "profilestack": {
+      "command": "/usr/local/bin/profilestack-mcp"
+    }
+  }
+}</code></pre>
+            <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+              <button class="btn btn-secondary btn-sm" onclick="copyCodeSnippet('code-claude')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Copy Claude Config
+              </button>
+            </div>
+          </div>
+
+          <!-- Tab Content: Cursor -->
+          <div id="mcp-tab-cursor" class="mcp-tab-panel">
+            <pre class="mcp-code-block"><code id="code-cursor">{
+  "name": "profilestack",
+  "type": "sse",
+  "url": "https://profilestack.apanel.eu.cc/mcp/sse"
+}</code></pre>
+            <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+              <button class="btn btn-secondary btn-sm" onclick="copyCodeSnippet('code-cursor')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Copy Cursor Config
+              </button>
+            </div>
+          </div>
+
+          <!-- Tab Content: Python -->
+          <div id="mcp-tab-python" class="mcp-tab-panel">
+            <pre class="mcp-code-block"><code id="code-python">from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+params = StdioServerParameters(command="/usr/local/bin/profilestack-mcp")
+async with stdio_client(params) as (read, write):
+    async with ClientSession(read, write) as session:
+        await session.initialize()
+        tools = await session.list_tools()
+        print(f"Connected! Available tools: {len(tools.tools)}")</code></pre>
+            <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+              <button class="btn btn-secondary btn-sm" onclick="copyCodeSnippet('code-python')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Copy Python Snippet
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
+        <span style="font-size: 12px; color: var(--text-muted);">See <a href="/docs/GUIDE.md#9-model-context-protocol-mcp-2x-integration" target="_blank" style="color: var(--primary); font-weight: 600;">docs/GUIDE.md</a> for full tool specifications.</span>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-mcp-config')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <script src="/static/js/app.js?v=20261003_v4_metrics"></script>
+</body>
+</html>
