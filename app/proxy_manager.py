@@ -97,4 +97,4 @@ async def test_proxy(proxy_url: str) -> dict:
             "latency_ms": round((time.time() - start_time) * 1000, 1)
         }
 
-# [ProfileStack v1.17.90] revision checkpoint
+# [ProfileStack v1.18.2] revision checkpoint
