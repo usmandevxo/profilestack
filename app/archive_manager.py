@@ -135,3 +135,5 @@ def import_profile_zip(archive_path: Path) -> dict:
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+# [ProfileStack v1.21.38] revision checkpoint
