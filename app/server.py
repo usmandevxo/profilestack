@@ -570,5 +570,3 @@ async def mouse_action(name: str, req: MouseActionRequest):
         return await cdp.send_mouse_action(int(p["cdp_port"]), req.action)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-# [ProfileStack v1.20.24] revision checkpoint
