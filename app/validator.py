@@ -121,4 +121,4 @@ def parse_proxy(proxy_url: str):
         "port": int(port),
     }
 
-# [ProfileStack v1.18.4] revision checkpoint
+# [ProfileStack v1.24.60] revision checkpoint
