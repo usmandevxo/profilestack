@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - ProfileStack</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=20261003_dir2">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=20261003_dir2">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png?v=20261003_dir2">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=20261003_dir2">
+  <link rel="shortcut icon" href="/favicon.ico?v=20261003_dir2">
+  <link rel="stylesheet" href="/static/css/style.css?v=20261003_dir2">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--bg-main);
+      padding: 16px;
+    }
+    .auth-container {
+      width: 100%;
+      max-width: 400px;
+    }
+    .auth-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px 28px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    }
+    .auth-header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .auth-logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      background: var(--primary);
+      color: #ffffff;
+      border-radius: 10px;
+      margin-bottom: 12px;
+    }
+    .auth-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 4px;
+      letter-spacing: -0.01em;
+    }
+    .auth-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .auth-alert {
+      padding: 10px 12px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #b91c1c;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-bottom: 18px;
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+    .password-wrap {
+      position: relative;
+    }
+    .password-toggle {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+    }
+    .password-toggle:hover {
+      color: var(--text-main);
+    }
+    .auth-footer-text {
+      text-align: center;
+      margin-top: 24px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo" style="background:none; width:64px; height:64px; margin-bottom:14px; box-shadow:none;">
+          <img src="/static/img/logo.svg" alt="ProfileStack Logo" width="64" height="64" style="display:block; filter: drop-shadow(0 12px 18px rgba(15, 23, 42, 0.22));">
+        </div>
+        <h1 class="auth-title">ProfileStack</h1>
+        <p class="auth-subtitle">Anti-Detect Browser Cluster Management</p>
+      </div>
+
+      <div class="auth-alert" id="auth-alert"></div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label class="form-label" for="username">Username</label>
+          <input type="text" id="username" class="form-input" placeholder="Enter your username" required autofocus autocomplete="username">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="password">Password</label>
+          <div class="password-wrap">
+            <input type="password" id="password" class="form-input" style="padding-right: 38px;" placeholder="Enter your password" required autocomplete="current-password">
+            <button type="button" class="password-toggle" id="btn-toggle-pw" title="Show or hide password" aria-label="Toggle password visibility">
+              <svg id="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 20px;">
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text-muted); cursor:pointer;">
+            <input type="checkbox" id="remember-me" checked> Remember this device
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="btn-submit" style="width:100%; justify-content:center; padding:10px 16px; font-size:14px;">
+          Sign In
+        </button>
+
+        <div style="margin-top: 14px; font-size: 12px; color: var(--text-muted); text-align: center; background: #f8fafc; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+          Default credentials: <strong style="color: var(--text-main);">admin</strong> / <strong style="color: var(--text-main);">admin</strong>
+        </div>
+      </form>
+    </div>
+
+    <div class="auth-footer-text">
+      Protected by ProfileStack Sandbox Isolation & Docker Containment
+    </div>
+  </div>
+
+  <script>
+    const alertBox = document.getElementById('auth-alert');
+    const form = document.getElementById('login-form');
+    const btnSubmit = document.getElementById('btn-submit');
+    const pwInput = document.getElementById('password');
+    const btnTogglePw = document.getElementById('btn-toggle-pw');
+
+    btnTogglePw.addEventListener('click', () => {
+      const isPassword = pwInput.type === 'password';
+      pwInput.type = isPassword ? 'text' : 'password';
+      btnTogglePw.innerHTML = isPassword ? `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+          <line x1="1" y1="1" x2="23" y2="23"></line>
+        </svg>
+      ` : `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+      `;
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      alertBox.style.display = 'none';
+      btnSubmit.disabled = true;
+      btnSubmit.textContent = 'Authenticating...';
+
+      const username = document.getElementById('username').value.trim();
+      const password = pwInput.value;
+      const remember = document.getElementById('remember-me').checked;
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, remember })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+          const urlParams = new URLSearchParams(window.location.search);
+          const nextUrl = urlParams.get('next') || '/';
+          window.location.href = nextUrl;
+        } else {
+          alertBox.textContent = data.detail || 'Invalid username or password.';
+          alertBox.style.display = 'flex';
+          btnSubmit.disabled = false;
+          btnSubmit.textContent = 'Sign In';
+        }
+      } catch (err) {
+        alertBox.textContent = 'Network error while attempting to sign in.';
+        alertBox.style.display = 'flex';
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = 'Sign In';
+      }
+    });
+  </script>
+</body>
+</html>
