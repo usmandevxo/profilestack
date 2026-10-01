@@ -354,4 +354,4 @@ def system_telemetry() -> dict:
         "storage_profiles_mb": round(total_storage_mb, 1),
     }
 
-# [ProfileStack v1.25.76] revision checkpoint
+# [ProfileStack v1.27.98] revision checkpoint
