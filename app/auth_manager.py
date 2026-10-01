@@ -157,4 +157,4 @@ def destroy_session(token: str) -> None:
         del sessions[token]
         save_sessions(sessions)
 
-# [ProfileStack v1.25.80] revision checkpoint
+# [ProfileStack v1.27.2] revision checkpoint
