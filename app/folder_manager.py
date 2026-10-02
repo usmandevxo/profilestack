@@ -234,3 +234,5 @@ def list_folders_with_stats() -> List[dict]:
         result.append(item)
 
     return result
+
+# [ProfileStack v1.28.14] revision checkpoint
