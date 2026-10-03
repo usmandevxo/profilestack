@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="100%" height="100%">
+  <defs>
+    <!-- Top Face: Active Chromium Viewport -->
+    <linearGradient id="cubeTop" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0369a1" />
+    </linearGradient>
+
+    <!-- Left Face: Docker & Kernel Isolation -->
+    <linearGradient id="cubeLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e40af" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+
+    <!-- Right Face: Fingerprint Spoofing & Network Tunnel -->
+    <linearGradient id="cubeRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1e3a8a" />
+    </linearGradient>
+
+    <!-- Radiant P-Shield Core -->
+    <linearGradient id="cubeGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="60%" stop-color="#7dd3fc" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+
+    <filter id="cubeDropShadow" x="-25%" y="-20%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#0f172a" flood-opacity="0.32" />
+    </filter>
+  </defs>
+
+  <g filter="url(#cubeDropShadow)" transform="translate(60, 58)">
+    <!-- Base Isometric Container Cube -->
+    <!-- Left Face (Docker Isolation) -->
+    <path d="M 0,0 L -46,-24 L -46,26 L 0,50 Z" fill="url(#cubeLeft)" />
+    <!-- Right Face (Proxy & Network Tunnel) -->
+    <path d="M 0,0 L 46,-24 L 46,26 L 0,50 Z" fill="url(#cubeRight)" />
+    <!-- Top Face (Chromium Viewport) -->
+    <path d="M 0,0 L 46,-24 L 0,-48 L -46,-24 Z" fill="url(#cubeTop)" />
+
+    <!-- Precision Chamfer / Inset Rim on Top Face -->
+    <path d="M 0,-4 L 40,-24 L 0,-44 L -40,-24 Z" fill="none" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.45" />
+
+    <!-- 3 Browser Control Dots in Isometric 3D Perspective -->
+    <g transform="translate(-22, -26) skewX(-30) scale(1, 0.58)">
+      <circle cx="-8" cy="0" r="3.2" fill="#ef4444" />
+      <circle cx="-8" cy="-0.6" r="1.4" fill="#fca5a5" opacity="0.6" />
+
+      <circle cx="0" cy="0" r="3.2" fill="#f59e0b" />
+      <circle cx="0" cy="-0.6" r="1.4" fill="#fde68a" opacity="0.6" />
+
+      <circle cx="8" cy="0" r="3.2" fill="#10b981" />
+      <circle cx="8" cy="-0.6" r="1.4" fill="#a7f3d0" opacity="0.6" />
+    </g>
+
+    <!-- Address Bar Slot in Top Face -->
+    <path d="M -12,-20 L 24,-20 L 16,-12 L -20,-12 Z" fill="#ffffff" opacity="0.22" />
+
+    <!-- Stepped Containment Cuts on Left Face (Representing the 3 Stacked Layers) -->
+    <line x1="-36" y1="-8" x2="0" y2="12" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4 3" stroke-opacity="0.65" />
+    <line x1="-36" y1="9" x2="0" y2="29" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4 3" stroke-opacity="0.65" />
+
+    <!-- Stepped Containment Cuts on Right Face -->
+    <line x1="36" y1="-8" x2="0" y2="12" stroke="#93c5fd" stroke-width="1.5" stroke-dasharray="4 3" stroke-opacity="0.65" />
+    <line x1="36" y1="9" x2="0" y2="29" stroke="#93c5fd" stroke-width="1.5" stroke-dasharray="4 3" stroke-opacity="0.65" />
+
+    <!-- Floating Identity Shield Node on Front Center Spine -->
+    <g transform="translate(0, 20)">
+      <!-- Radiant Hexagonal Core Shield -->
+      <polygon points="0,-12 11,-6 11,6 0,12 -11,6 -11,-6" fill="url(#cubeGlow)" />
+      <!-- Precision P Monogram Cutout -->
+      <path d="M -3.2,-6 L 1.2,-6 C 3.6,-6 5.4,-4.2 5.4,-2 C 5.4,0.2 3.6,2 1.2,2 L -1,2 L -1,6 C -1,6.6 -1.4,7 -2,7 C -2.6,7 -3.2,6.6 -3.2,6 Z M -1,-4 L -1,0 L 1,0 C 1.8,0 2.8,-0.4 2.8,-2 C 2.8,-3.6 1.8,-4 1,-4 Z" fill="#0f172a" />
+      <circle cx="0" cy="0" r="1.2" fill="#38bdf8" />
+    </g>
+  </g>
+</svg>

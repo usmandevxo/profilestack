@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%">
+  <defs>
+    <linearGradient id="favCubeTop" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0369a1" />
+    </linearGradient>
+    <linearGradient id="favCubeLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e40af" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="favCubeRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1e3a8a" />
+    </linearGradient>
+    <linearGradient id="favCore" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(32, 32) scale(0.62)">
+    <!-- Base Isometric Cube -->
+    <path d="M 0,0 L -46,-24 L -46,26 L 0,50 Z" fill="url(#favCubeLeft)" />
+    <path d="M 0,0 L 46,-24 L 46,26 L 0,50 Z" fill="url(#favCubeRight)" />
+    <path d="M 0,0 L 46,-24 L 0,-48 L -46,-24 Z" fill="url(#favCubeTop)" />
+
+    <!-- Rim highlight -->
+    <path d="M 0,-4 L 40,-24 L 0,-44 L -40,-24 Z" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-opacity="0.5" />
+
+    <!-- 3 Window Dots in 3D Perspective -->
+    <g transform="translate(-22, -26) skewX(-30) scale(1, 0.58)">
+      <circle cx="-9" cy="0" r="4.2" fill="#ef4444" />
+      <circle cx="0" cy="0" r="4.2" fill="#f59e0b" />
+      <circle cx="9" cy="0" r="4.2" fill="#10b981" />
+    </g>
+
+    <!-- Address slot -->
+    <path d="M -12,-20 L 24,-20 L 16,-12 L -20,-12 Z" fill="#ffffff" opacity="0.25" />
+
+    <!-- Shield Core -->
+    <polygon points="0,-13 12,-6 12,6 0,13 -12,6 -12,-6" transform="translate(0, 20)" fill="url(#favCore)" />
+    <circle cx="0" cy="20" r="3.2" fill="#0284c7" />
+  </g>
+</svg>

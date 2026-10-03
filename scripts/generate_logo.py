@@ -385,5 +385,3 @@ ico_images[0].save(
     append_images=ico_images[1:]
 )
 print("GENERATED: favicon.ico (multi-resolution 16, 32, 48, 64)")
-
-# [ProfileStack v1.29.18] revision checkpoint
