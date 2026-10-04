@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 from pathlib import Path
 from typing import Union
 from app.config import PROFILES_DIR
@@ -92,6 +93,61 @@ def clean_stale_locks(profile_path: Union[str, Path]) -> None:
                     target.unlink(missing_ok=True)
             except Exception:
                 pass
+
+
+def force_remove_directory(target_path: Union[str, Path]) -> bool:
+    p = Path(target_path).resolve()
+    if not p.exists():
+        return True
+
+    # 1. Unlink stale sockets and lock symlinks first
+    for lock_name in ["SingletonLock", "SingletonCookie", "SingletonSocket", "LOCK"]:
+        for target in [p / lock_name, p / "Default" / lock_name]:
+            try:
+                if target.is_symlink() or target.exists():
+                    target.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    # 2. Recursively grant full permissions to bypass read-only directory/file locks
+    try:
+        os.chmod(p, 0o777)
+    except Exception:
+        pass
+    for root, dirs, files in os.walk(p):
+        for d in dirs:
+            try:
+                os.chmod(os.path.join(root, d), 0o777)
+            except Exception:
+                pass
+        for f in files:
+            try:
+                os.chmod(os.path.join(root, f), 0o777)
+            except Exception:
+                pass
+
+    # 3. Robust shutil.rmtree with onerror handler that chmods and retries
+    def _onerror(func, path_to_remove, exc_info):
+        try:
+            os.chmod(path_to_remove, 0o777)
+            func(path_to_remove)
+        except Exception:
+            pass
+
+    try:
+        shutil.rmtree(p, onerror=_onerror)
+    except Exception:
+        pass
+
+    # 4. Fallback system command if still present on disk
+    if p.exists():
+        try:
+            import subprocess
+            subprocess.run(["rm", "-rf", str(p)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    return not p.exists()
 
 
 def validate_proxy_url(url: str) -> str:

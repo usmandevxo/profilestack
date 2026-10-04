@@ -1,6 +1,8 @@
+import os
 from pathlib import Path
 
-BASE_DIR = Path("/www/wwwroot/profilestack")
+# Auto-detect project root directory from environment or repository root
+BASE_DIR = Path(os.environ.get("PROFILESTACK_DIR", Path(__file__).resolve().parent.parent))
 DATA_DIR = BASE_DIR / "data"
 PROFILES_DIR = DATA_DIR / "profiles"
 ARCHIVES_DIR = DATA_DIR / "archives"

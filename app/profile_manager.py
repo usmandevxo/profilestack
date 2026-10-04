@@ -8,7 +8,12 @@ import psutil
 
 from app.config import PROFILES_DIR, REGISTRY_FILE
 from app.docker_engine import DockerEngine
-from app.validator import safe_profile_path, validate_profile_name, validate_proxy_url
+from app.validator import (
+    force_remove_directory,
+    safe_profile_path,
+    validate_profile_name,
+    validate_proxy_url,
+)
 import app.folder_manager as fm
 
 _docker = DockerEngine()
@@ -165,7 +170,8 @@ def create_profile(
 
     p_dir = safe_profile_path(name, folder=folder)
     if p_dir.exists():
-        raise ValueError(f"Directory already exists: {p_dir}")
+        # Clean up any orphaned directory leftover from an earlier deleted profile
+        force_remove_directory(p_dir)
 
     p_dir.mkdir(parents=True, exist_ok=True)
     (p_dir / "Downloads").mkdir(exist_ok=True)
@@ -295,10 +301,41 @@ def delete_profile(name: str) -> dict:
     entry = reg.pop(name, None)
     _save_registry(reg)
 
+    deleted_paths = set()
+
+    # 1. If entry had an explicit path recorded in registry, completely remove it
     if entry and entry.get("path"):
-        target_path = Path(entry["path"])
-        if target_path.is_dir() and str(target_path).startswith(str(PROFILES_DIR)):
-            shutil.rmtree(target_path, ignore_errors=True)
+        target_path = Path(entry["path"]).resolve()
+        try:
+            if target_path.is_relative_to(PROFILES_DIR.resolve()) and target_path.exists():
+                force_remove_directory(target_path)
+                deleted_paths.add(str(target_path))
+        except (AttributeError, ValueError):
+            if str(target_path).startswith(str(PROFILES_DIR.resolve())) and target_path.exists():
+                force_remove_directory(target_path)
+                deleted_paths.add(str(target_path))
+
+    # 2. Check all potential profile disk locations across root and folder subdirectories
+    candidates = [PROFILES_DIR / name]
+    try:
+        candidates.extend(list(PROFILES_DIR.glob(f"*/{name}")))
+    except Exception:
+        pass
+
+    for candidate in candidates:
+        try:
+            c_res = candidate.resolve()
+            if str(c_res) not in deleted_paths:
+                is_rel = False
+                try:
+                    is_rel = c_res.is_relative_to(PROFILES_DIR.resolve())
+                except (AttributeError, ValueError):
+                    is_rel = str(c_res).startswith(str(PROFILES_DIR.resolve()))
+                if is_rel and c_res.exists():
+                    force_remove_directory(c_res)
+                    deleted_paths.add(str(c_res))
+        except Exception:
+            pass
 
     return {"status": "deleted", "name": name}
 
