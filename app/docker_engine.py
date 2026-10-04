@@ -1,11 +1,16 @@
+import asyncio
+import concurrent.futures
 import hashlib
+import json
 import os
 import socket
 import time
+import urllib.request
 from typing import Dict, Optional, Tuple
 import docker
 import docker.errors
 from docker.types import Ulimit
+import websockets
 from app.config import (
     CDP_PORT_END,
     CDP_PORT_START,
@@ -295,6 +300,40 @@ class DockerEngine:
             "cdp_port": cdp_port,
         }
 
+    def _graceful_browser_close(self, profile_name: str, timeout: float = 2.0):
+        ports = self.get_profile_ports(profile_name)
+        cdp_port = ports.get("cdp_port")
+        if not cdp_port:
+            return
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{cdp_port}/json/version")
+            with urllib.request.urlopen(req, timeout=0.8) as resp:
+                v = json.loads(resp.read())
+            b_ws = v.get("webSocketDebuggerUrl")
+            if not b_ws:
+                return
+
+            async def _send_close():
+                async with websockets.connect(b_ws, close_timeout=1.0) as ws:
+                    await ws.send(json.dumps({"id": 9999, "method": "Browser.close"}))
+                    try:
+                        await asyncio.wait_for(ws.recv(), timeout=1.0)
+                    except Exception:
+                        pass
+
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                        pool.submit(lambda: asyncio.run(_send_close())).result(timeout=2.0)
+                else:
+                    loop.run_until_complete(_send_close())
+            except Exception:
+                asyncio.run(_send_close())
+            time.sleep(0.5)
+        except Exception:
+            pass
+
     def stop_profile(self, profile_name: str, profile_dir: str = "") -> dict:
         c = self.get_container(profile_name)
         if not c:
@@ -303,7 +342,10 @@ class DockerEngine:
                 fix_profile_permissions(profile_dir)
             return {"status": "not_found"}
         try:
-            # Allow Chromium up to 10 seconds to gracefully commit SQLite WAL journals & sessions
+            # 1. Trigger Chromium native graceful shutdown via CDP Browser.close so cookies & sessions commit synchronously
+            self._graceful_browser_close(profile_name)
+
+            # 2. Allow up to 10 seconds for container to exit cleanly
             c.stop(timeout=10)
             c.remove(force=True)
             if profile_dir:

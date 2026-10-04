@@ -64,7 +64,6 @@ FLAGS=(
     "--remote-debugging-address=127.0.0.1"
     "--remote-allow-origins=*"
     "--no-sandbox"
-    "--test-type"
     "--no-first-run"
     "--no-default-browser-check"
     "--disable-sync"
@@ -84,7 +83,6 @@ FLAGS=(
     "--disable-dev-shm-usage"
     "--user-data-dir=/home/chrome/.config/chromium"
     "--password-store=basic"
-    "--use-mock-keychain"
     "--disable-features=LockProfileCookieDatabase"
     "--disable-session-crashed-bubble"
     "--restore-last-session"
@@ -93,31 +91,53 @@ FLAGS=(
 # Start URL
 TARGET_URL="${CHROME_START_URL:-https://www.google.com}"
 
-# Clean stale Singleton locks and crash indicators from previous host runs
 CONFIG_DIR="/home/chrome/.config/chromium"
+
+# Clean stale Singleton locks and crash indicators from previous host runs
 rm -f "$CONFIG_DIR/SingletonLock" "$CONFIG_DIR/SingletonCookie" "$CONFIG_DIR/SingletonSocket" 2>/dev/null || true
 rm -f "$CONFIG_DIR/Default/LOCK" "$CONFIG_DIR/Default/SingletonLock" 2>/dev/null || true
 
-# Normalize exit_type to Normal in Preferences so Chromium never considers previous run crashed
-if [ -f "$CONFIG_DIR/Default/Preferences" ]; then
-    python3 -c "
-import json
+# Ensure persistent machine-id per profile across container restarts
+MACHINE_ID_FILE="$CONFIG_DIR/machine-id"
+if [ ! -f "$MACHINE_ID_FILE" ]; then
+    python3 -c "import hashlib, sys; print(hashlib.md5(('profilestack_' + sys.argv[1]).encode()).hexdigest())" "$PROFILE_NAME" > "$MACHINE_ID_FILE" 2>/dev/null || true
+fi
+STABLE_ID="$(cat "$MACHINE_ID_FILE" 2>/dev/null || true)"
+if [ -n "$STABLE_ID" ]; then
+    echo "$STABLE_ID" > /etc/machine-id 2>/dev/null || true
+    echo "$STABLE_ID" > /var/lib/dbus/machine-id 2>/dev/null || true
+fi
+
+# Ensure session restore and cookie retention are permanently set in Preferences
+mkdir -p "$CONFIG_DIR/Default"
+python3 -c "
+import json, os
+pref_path = '$CONFIG_DIR/Default/Preferences'
 try:
-    with open('$CONFIG_DIR/Default/Preferences', 'r+') as f:
-        data = json.load(f)
-        prof = data.setdefault('profile', {})
-        prof['exit_type'] = 'Normal'
-        prof['exited_cleanly'] = True
-        f.seek(0)
-        json.dump(data, f)
-        f.truncate()
+    data = {}
+    if os.path.exists(pref_path):
+        with open(pref_path, 'r') as f:
+            data = json.load(f)
+    prof = data.setdefault('profile', {})
+    prof['exit_type'] = 'Normal'
+    prof['exited_cleanly'] = True
+    prof.setdefault('default_content_setting_values', {})['cookies'] = 1
+    prof['cookie_controls_mode'] = 0
+    # Enable session restore so session cookies (login auth tokens) are NEVER wiped on exit
+    sess = data.setdefault('session', {})
+    sess['restore_on_startup'] = 1
+    with open(pref_path, 'w') as f:
+        json.dump(data, f, indent=2)
 except Exception:
     pass
 " 2>/dev/null || true
-fi
 
 # Set CPU affinity for process tree
 taskset -p -c "0-$((SPOOF_CORES-1))" $$ &>/dev/null || true
 
 # Execute Chromium directly so Docker SIGTERM signals trigger graceful SQLite & session flush
-exec chromium-browser "${FLAGS[@]}" "$@" "$TARGET_URL"
+if [ -f "$CONFIG_DIR/Default/Preferences" ] && [ -d "$CONFIG_DIR/Default/Sessions" ]; then
+    exec chromium-browser "${FLAGS[@]}" "$@"
+else
+    exec chromium-browser "${FLAGS[@]}" "$@" "$TARGET_URL"
+fi

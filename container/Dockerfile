@@ -21,9 +21,11 @@ RUN apk add --no-cache \
         mesa-dri-gallium \
     && addgroup -g ${GROUP_ID} chrome \
     && adduser -u ${USER_ID} -G chrome -D -s /bin/bash chrome \
-    && mkdir -p /home/chrome/.config/chromium /home/chrome/Downloads /home/chrome/scripts \
+    && mkdir -p /home/chrome/.config/chromium /home/chrome/Downloads /home/chrome/scripts /var/lib/dbus \
+    && touch /etc/machine-id /var/lib/dbus/machine-id \
+    && chown chrome:chrome /etc/machine-id /var/lib/dbus/machine-id \
+    && chown -R chrome:chrome /home/chrome /var/lib/dbus \
     && ln -sf /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html \
-    && chown -R chrome:chrome /home/chrome \
     && rm -rf /var/cache/apk/* /tmp/* /var/tmp/*
 
 COPY vnc_lite.html /usr/share/novnc/vnc_lite.html
