@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import socket
 import threading
+import time
 
 def forward(src, dst):
     try:
@@ -18,8 +19,22 @@ def forward(src, dst):
             pass
 
 def handle_client(client):
+    upstream = None
+    for _ in range(50):
+        try:
+            upstream = socket.create_connection(('127.0.0.1', 9223), timeout=2.0)
+            break
+        except (ConnectionRefusedError, OSError):
+            time.sleep(0.2)
+
+    if not upstream:
+        try:
+            client.close()
+        except Exception:
+            pass
+        return
+
     try:
-        upstream = socket.create_connection(('127.0.0.1', 9223), timeout=10)
         t1 = threading.Thread(target=forward, args=(client, upstream), daemon=True)
         t2 = threading.Thread(target=forward, args=(upstream, client), daemon=True)
         t1.start()

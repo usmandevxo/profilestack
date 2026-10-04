@@ -21,10 +21,11 @@ RUN apk add --no-cache \
         mesa-dri-gallium \
     && addgroup -g ${GROUP_ID} chrome \
     && adduser -u ${USER_ID} -G chrome -D -s /bin/bash chrome \
-    && mkdir -p /home/chrome/.config/chromium /home/chrome/Downloads /home/chrome/scripts /var/lib/dbus \
-    && touch /etc/machine-id /var/lib/dbus/machine-id \
-    && chown chrome:chrome /etc/machine-id /var/lib/dbus/machine-id \
-    && chown -R chrome:chrome /home/chrome /var/lib/dbus \
+    && mkdir -p /home/chrome/.config/chromium /home/chrome/Downloads /home/chrome/scripts /var/lib/dbus /etc/chromium/policies/managed \
+    && touch /etc/machine-id /var/lib/dbus/machine-id /etc/timezone \
+    && echo '{"SigninAllowed":false,"BrowserSignin":0,"SyncDisabled":true,"PasswordManagerEnabled":true,"MetricsReportingEnabled":false}' > /etc/chromium/policies/managed/default.json \
+    && chown chrome:chrome /etc/machine-id /var/lib/dbus/machine-id /etc/timezone \
+    && chown -R chrome:chrome /home/chrome /var/lib/dbus /etc/chromium \
     && ln -sf /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html \
     && rm -rf /var/cache/apk/* /tmp/* /var/tmp/*
 

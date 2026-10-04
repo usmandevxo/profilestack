@@ -67,6 +67,8 @@ FLAGS=(
     "--no-first-run"
     "--no-default-browser-check"
     "--disable-sync"
+    "--disable-signin-scoped-device-id"
+    "--disable-features=AccountConsistency,DesktopIdentityConsistency,LockProfileCookieDatabase"
     "--disable-translate"
     "--disable-logging"
     "--log-level=3"
@@ -83,7 +85,6 @@ FLAGS=(
     "--disable-dev-shm-usage"
     "--user-data-dir=/home/chrome/.config/chromium"
     "--password-store=basic"
-    "--disable-features=LockProfileCookieDatabase"
     "--disable-session-crashed-bubble"
     "--restore-last-session"
 )
@@ -108,24 +109,49 @@ if [ -n "$STABLE_ID" ]; then
     echo "$STABLE_ID" > /var/lib/dbus/machine-id 2>/dev/null || true
 fi
 
-# Ensure session restore and cookie retention are permanently set in Preferences
+# Synchronize system timezone with profile timezone
+if [ -n "$CHROME_TIMEZONE" ] && [ -f "/usr/share/zoneinfo/$CHROME_TIMEZONE" ]; then
+    echo "$CHROME_TIMEZONE" > /etc/timezone 2>/dev/null || true
+    export TZ="$CHROME_TIMEZONE"
+fi
+
+# Ensure session restore, cookie retention, and persistent Google session settings in Preferences
 mkdir -p "$CONFIG_DIR/Default"
 python3 -c "
-import json, os
+import json, os, uuid
 pref_path = '$CONFIG_DIR/Default/Preferences'
+stable_id = '$STABLE_ID'
 try:
     data = {}
     if os.path.exists(pref_path):
         with open(pref_path, 'r') as f:
             data = json.load(f)
+
     prof = data.setdefault('profile', {})
     prof['exit_type'] = 'Normal'
     prof['exited_cleanly'] = True
     prof.setdefault('default_content_setting_values', {})['cookies'] = 1
     prof['cookie_controls_mode'] = 0
+    prof['block_third_party_cookies'] = False
+
+    # Disable Chrome DICE sync so web sessions (Google, etc.) are never signed out by browser sync failure
+    signin = data.setdefault('signin', {})
+    signin['allowed'] = False
+    signin['allowed_on_next_startup'] = False
+
+    # Ensure stable signin_scoped_device_id bound to profile machine-id
+    if stable_id:
+        try:
+            device_uuid = str(uuid.UUID(stable_id))
+            gservices = data.setdefault('google', {}).setdefault('services', {})
+            gservices['signin_scoped_device_id'] = device_uuid
+        except Exception:
+            pass
+
     # Enable session restore so session cookies (login auth tokens) are NEVER wiped on exit
     sess = data.setdefault('session', {})
     sess['restore_on_startup'] = 1
+
     with open(pref_path, 'w') as f:
         json.dump(data, f, indent=2)
 except Exception:
