@@ -141,6 +141,15 @@ class MouseActionRequest(BaseModel):
     action: str
 
 
+class SendShortcutRequest(BaseModel):
+    modifiers: list  # e.g. ["Control"], ["Control", "Shift"]
+    key: str         # e.g. "c", "v", "F5"
+
+
+class PasteClipboardRequest(BaseModel):
+    text: str        # clipboard text read by the browser, forwarded here for CDP injection
+
+
 # ── Frontend Views ─────────────────────────────────────────────────────────────
 @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
 async def favicon_ico():
@@ -568,5 +577,37 @@ async def mouse_action(name: str, req: MouseActionRequest):
         raise HTTPException(status_code=400, detail="Profile is not currently running.")
     try:
         return await cdp.send_mouse_action(int(p["cdp_port"]), req.action)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/profiles/{name}/send-shortcut")
+async def send_shortcut(name: str, req: SendShortcutRequest):
+    """Send a keyboard shortcut with modifiers (e.g. Ctrl+C, Ctrl+V) via CDP."""
+    p = pm.get_profile(name)
+    if not p or p.get("status") != "running" or not p.get("cdp_port"):
+        raise HTTPException(status_code=400, detail="Profile is not currently running.")
+    if not req.key:
+        raise HTTPException(status_code=400, detail="key is required.")
+    try:
+        return await cdp.send_shortcut(int(p["cdp_port"]), req.modifiers or [], req.key)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/profiles/{name}/paste-clipboard")
+async def paste_clipboard(name: str, req: PasteClipboardRequest):
+    """
+    Paste local clipboard text into the focused element in the browser profile.
+    The browser page reads the clipboard via navigator.clipboard.readText() and
+    sends the text here; we inject it via CDP Input.insertText for instant paste.
+    """
+    p = pm.get_profile(name)
+    if not p or p.get("status") != "running" or not p.get("cdp_port"):
+        raise HTTPException(status_code=400, detail="Profile is not currently running.")
+    if not req.text:
+        return {"status": "empty", "length": 0}
+    try:
+        return await cdp.paste_clipboard_text(int(p["cdp_port"]), req.text)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -398,6 +398,13 @@
       </div>
 
       <div style="display:flex; align-items:center; gap:6px;">
+        <button class="btn btn-secondary btn-sm" id="btn-paste-clipboard" title="Paste from local clipboard into browser (Ctrl+V)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+          </svg>
+          Paste
+        </button>
         <button class="btn btn-secondary btn-sm" id="btn-toggle-keyboard" title="Toggle On-Screen Keyboard">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect>
@@ -548,15 +555,51 @@
     const vncPort = {{ profile.vnc_port or 0 }};
     const profileName = "{{ profile.name }}";
 
-    function showToast(msg) {
+    // ── Toast notifications ────────────────────────────────────────────────────
+    function showToast(msg, type = 'info') {
       const container = document.getElementById('toast-container');
       const toast = document.createElement('div');
-      toast.className = 'toast toast-info';
+      toast.className = `toast toast-${type}`;
       toast.textContent = msg;
       container.appendChild(toast);
       setTimeout(() => { toast.remove(); }, 3000);
     }
 
+    // ── CDP API helpers ────────────────────────────────────────────────────────
+    async function apiPost(endpoint, body) {
+      const res = await fetch(`/api/profiles/${encodeURIComponent(profileName)}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || res.statusText);
+      }
+      return res.json();
+    }
+
+    async function sendShortcut(modifiers, key) {
+      return apiPost('send-shortcut', { modifiers, key });
+    }
+
+    async function pasteLocalClipboard() {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text) { showToast('Clipboard is empty'); return; }
+        await apiPost('paste-clipboard', { text });
+        showToast(`Pasted ${text.length} chars`);
+      } catch (err) {
+        // Clipboard API blocked (non-HTTPS or permission denied) — fall back to prompt
+        const text = prompt('Paste your text here (clipboard access was blocked):');
+        if (text) {
+          await apiPost('paste-clipboard', { text });
+          showToast(`Pasted ${text.length} chars`);
+        }
+      }
+    }
+
+    // ── VNC iframe stream setup ────────────────────────────────────────────────
     if (vncPort > 0) {
       const iframe = document.getElementById('vnc-iframe');
       const isCustomPort = window.location.port === "7800";
@@ -573,7 +616,96 @@
       });
     }
 
-    // Toggle Virtual Keyboard
+    // ── Global keyboard shortcut interceptor ──────────────────────────────────
+    // Intercept shortcuts on the viewer page itself and forward them via CDP
+    // so they act inside the remote browser, not on this tab.
+    //
+    // Shortcuts forwarded to remote browser:
+    //   Ctrl+C / Ctrl+X / Ctrl+A / Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z
+    //   Ctrl+F / Ctrl+G / Ctrl+H / Ctrl+L / Ctrl+T / Ctrl+W / Ctrl+N
+    //   Ctrl+R / Ctrl+Shift+R / Ctrl+S / Ctrl+P / Ctrl+D / Ctrl+E
+    //   Ctrl++ / Ctrl+- / Ctrl+0 (zoom)
+    //   Ctrl+[ / Ctrl+] (history back/forward)
+    //   F1-F12, Delete, Home, End, PageUp, PageDown
+    //
+    // Ctrl+V is handled specially: reads local clipboard and injects text via CDP.
+
+    const FORWARDED_CTRL_KEYS = new Set([
+      'a','c','x','z','y','f','g','h','l','t','w','n','r','s','p','d','e',
+      '+','-','0','[',']','='
+    ]);
+    const FORWARDED_CTRL_SHIFT_KEYS = new Set(['z','r','i','j','c','n','t']);
+    const FORWARDED_F_KEYS = new Set(['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12']);
+    const FORWARDED_BARE_KEYS = new Set(['Delete','Home','End','PageUp','PageDown']);
+
+    // Track whether the VNC iframe currently has user focus (pointer entered)
+    let vncFocused = false;
+    const vncIframe = document.getElementById('vnc-iframe');
+    vncIframe?.addEventListener('mouseenter', () => { vncFocused = true; });
+    vncIframe?.addEventListener('mouseleave', () => { vncFocused = false; });
+
+    // Also treat clicks inside the viewer frame wrap as VNC focused
+    document.querySelector('.viewer-frame-wrap')?.addEventListener('click', () => {
+      vncFocused = true;
+    });
+
+    document.addEventListener('keydown', async (e) => {
+      // Don't intercept if user is typing in our own inputs (virtual keyboard, URL bar, etc.)
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      const ctrl  = e.ctrlKey || e.metaKey;
+      const shift = e.shiftKey;
+      const alt   = e.altKey;
+      const key   = e.key;
+      const keyLc = key.toLowerCase();
+
+      let handled = false;
+
+      if (ctrl && !alt) {
+        if (keyLc === 'v') {
+          // Ctrl+V: read local clipboard and inject via CDP insertText
+          e.preventDefault();
+          e.stopPropagation();
+          pasteLocalClipboard();
+          handled = true;
+        } else if (!shift && FORWARDED_CTRL_KEYS.has(keyLc)) {
+          // Ctrl+key: forward to remote browser
+          e.preventDefault();
+          e.stopPropagation();
+          sendShortcut(['Control'], keyLc).catch(() => {});
+          handled = true;
+        } else if (shift && FORWARDED_CTRL_SHIFT_KEYS.has(keyLc)) {
+          // Ctrl+Shift+key: forward to remote browser
+          e.preventDefault();
+          e.stopPropagation();
+          sendShortcut(['Control', 'Shift'], keyLc).catch(() => {});
+          handled = true;
+        }
+      } else if (!ctrl && !alt) {
+        if (FORWARDED_F_KEYS.has(key)) {
+          e.preventDefault();
+          e.stopPropagation();
+          sendShortcut(shift ? ['Shift'] : [], key).catch(() => {});
+          handled = true;
+        } else if (FORWARDED_BARE_KEYS.has(key)) {
+          e.preventDefault();
+          e.stopPropagation();
+          const mods = [];
+          if (shift) mods.push('Shift');
+          if (ctrl) mods.push('Control');
+          sendShortcut(mods, key).catch(() => {});
+          handled = true;
+        }
+      }
+    }, true); // capture phase so we beat the iframe
+
+    // ── Paste button ──────────────────────────────────────────────────────────
+    document.getElementById('btn-paste-clipboard')?.addEventListener('click', () => {
+      pasteLocalClipboard();
+    });
+
+    // ── Toggle Virtual Keyboard ────────────────────────────────────────────────
     const kbPanel = document.getElementById('virtual-keyboard-panel');
     document.getElementById('btn-toggle-keyboard')?.addEventListener('click', () => {
       kbPanel.classList.toggle('active');
@@ -585,7 +717,7 @@
       kbPanel.classList.remove('active');
     });
 
-    // Toggle Complete Trackpad
+    // ── Toggle Complete Trackpad ───────────────────────────────────────────────
     const trackpadPanel = document.getElementById('trackpad-panel');
     document.getElementById('btn-toggle-trackpad')?.addEventListener('click', () => {
       trackpadPanel.classList.toggle('active');
@@ -594,7 +726,7 @@
       trackpadPanel.classList.remove('active');
     });
 
-    // Send Text Input via API
+    // ── Send Text Input via API ────────────────────────────────────────────────
     document.getElementById('v-text-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const input = document.getElementById('v-input-text');
@@ -602,11 +734,7 @@
       const enter = document.getElementById('v-input-enter').checked;
       if (!text) return;
       try {
-        await fetch(`/api/profiles/${encodeURIComponent(profileName)}/send-text`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, press_enter: enter })
-        });
+        await apiPost('send-text', { text, press_enter: enter });
         showToast(`Sent: "${text}"`);
         input.value = '';
       } catch (err) {
@@ -614,16 +742,17 @@
       }
     });
 
-    // Send Key Event via API
+    // Allow Ctrl+V inside the virtual keyboard text input to paste locally (not to remote)
+    document.getElementById('v-input-text')?.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // prevent our global interceptor from catching it
+    });
+
+    // ── Send Key Event via API ─────────────────────────────────────────────────
     document.querySelectorAll('.v-key[data-key]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const key = btn.dataset.key;
         try {
-          await fetch(`/api/profiles/${encodeURIComponent(profileName)}/send-key`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key })
-          });
+          await apiPost('send-key', { key });
         } catch (err) {
           showToast('Error sending key: ' + err.message);
         }
@@ -858,16 +987,20 @@
     });
 
     document.getElementById('btn-stop-session')?.addEventListener('click', async () => {
-      const res = await fetch(`/api/profiles/${encodeURIComponent(profileName)}/stop`, { method: 'POST' });
-      if (res.ok) {
+      try {
+        await apiPost('stop', {});
         window.location.href = '/';
+      } catch (e) {
+        showToast('Error stopping session');
       }
     });
 
     document.getElementById('btn-start-now')?.addEventListener('click', async () => {
-      const res = await fetch(`/api/profiles/${encodeURIComponent(profileName)}/start`, { method: 'POST' });
-      if (res.ok) {
+      try {
+        await apiPost('start', {});
         window.location.reload();
+      } catch (e) {
+        showToast('Error starting profile');
       }
     });
   </script>
