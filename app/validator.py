@@ -80,6 +80,16 @@ def fix_profile_permissions(profile_path: Union[str, Path]) -> None:
                 os.chmod(os.path.join(root, f), 0o666)
             except Exception:
                 pass
+    # Explicitly ensure Local State is world-readable so the container user
+    # (UID 1001/chrome) can always read the os_crypt encryption key.
+    # Chromium resets this file to 0600 after each session; the host must
+    # re-open it before the next container start or all cookies become unreadable.
+    local_state = path / "Local State"
+    if local_state.exists():
+        try:
+            os.chmod(local_state, 0o666)
+        except Exception:
+            pass
 
 
 def clean_stale_locks(profile_path: Union[str, Path]) -> None:

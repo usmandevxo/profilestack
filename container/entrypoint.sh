@@ -115,6 +115,69 @@ if [ -n "$CHROME_TIMEZONE" ] && [ -f "/usr/share/zoneinfo/$CHROME_TIMEZONE" ]; t
     export TZ="$CHROME_TIMEZONE"
 fi
 
+# -----------------------------------------------------------------------
+# CRITICAL: Inject stable encryption key into Local State BEFORE Chromium
+# starts. Chromium 124+ with --password-store=basic encrypts all cookies
+# with an AES-256-GCM key stored in Local State os_crypt.encrypted_key.
+# If this key is absent or changes between restarts, ALL existing cookies
+# become unreadable and Google/other sites sign the user out instantly.
+# We derive a deterministic key from the stable machine-id so the same
+# key is used on every container restart, preserving all saved sessions.
+# -----------------------------------------------------------------------
+mkdir -p "$CONFIG_DIR/Default"
+python3 - "$CONFIG_DIR" "$STABLE_ID" "$PROFILE_NAME" <<'PYEOF'
+import json, os, sys, base64, struct, hashlib, hmac
+
+config_dir = sys.argv[1]
+stable_id  = sys.argv[2]
+profile    = sys.argv[3]
+local_state_path = os.path.join(config_dir, "Local State")
+
+# --- Build a stable 32-byte AES key from machine-id + profile name ---
+# Uses HMAC-SHA256 so the key is unique per profile but fully deterministic
+seed = f"profilestack_oscrypt_v1:{stable_id}:{profile}"
+aes_key = hmac.new(b"profilestack", seed.encode(), hashlib.sha256).digest()  # 32 bytes
+
+# Chromium's --password-store=basic on Linux encrypts Local State key with
+# DPAPI-v1 wrapping: prefix "DPAPI" + the raw AES key (no actual DPAPI used
+# on Linux; Chromium reads it back as-is when password-store=basic is set).
+# The encrypted_key field in Local State is: base64("DPAPI" + raw_aes_key)
+dpapi_prefixed = b"DPAPI" + aes_key
+encrypted_key_b64 = base64.b64encode(dpapi_prefixed).decode()
+
+# Load or create Local State
+data = {}
+if os.path.exists(local_state_path):
+    try:
+        with open(local_state_path, "r") as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+
+os_crypt = data.setdefault("os_crypt", {})
+existing_key = os_crypt.get("encrypted_key", "")
+
+# Only inject our key when Local State has no key yet (first run).
+# If Chromium previously wrote its own key, preserve it so existing cookies remain readable.
+# The critical fix is ensuring permissions (0666) so the container can always read the key.
+if not existing_key:
+    os_crypt["encrypted_key"] = encrypted_key_b64
+    try:
+        with open(local_state_path, "w") as f:
+            json.dump(data, f, separators=(",", ":"))
+    except Exception as e:
+        pass
+
+# Always ensure Local State is readable and writable by container user
+try:
+    os.chmod(local_state_path, 0o666)
+except Exception:
+    pass
+PYEOF
+
+# Also ensure Local State readable after any previous Chromium run locked it
+chmod 666 "$CONFIG_DIR/Local State" 2>/dev/null || true
+
 # Ensure session restore, cookie retention, and persistent Google session settings in Preferences
 mkdir -p "$CONFIG_DIR/Default"
 python3 -c "
