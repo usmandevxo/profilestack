@@ -415,6 +415,13 @@ def launch_profile(profile_name: str, server_url: str = DEFAULT_SERVER, token: s
     local_dir.mkdir(parents=True, exist_ok=True)
 
     log(f"[*] Synchronizing state into {local_dir}...")
+    # Gracefully stop remote container first so SQLite WAL journals flush cleanly to disk
+    try:
+        client._req(f"/api/profiles/{urllib.parse.quote(profile_name)}/stop", method="POST")
+        time.sleep(0.5)
+    except Exception:
+        pass
+
     try:
         client.download_profile(profile_name, local_dir)
         log("[+] State sync complete.")
@@ -422,13 +429,26 @@ def launch_profile(profile_name: str, server_url: str = DEFAULT_SERVER, token: s
         log(f"[!] Warning: sync-down failed ({e}), continuing with local cache if available.")
 
     # Remove all stale lock files and symlinks forcefully
-    for p in [local_dir, local_dir / "Default"]:
+    for p in [local_dir, local_dir / "Default", local_dir / "Profile 1", local_dir / "Profile 2"]:
         if p.is_dir():
             for item in p.iterdir():
                 name_lower = item.name.lower()
                 if any(k in name_lower for k in ["singleton", "lock"]):
                     try: item.unlink(missing_ok=True)
                     except Exception: pass
+
+    # Inject anti-DICE and session restore settings into Preferences to prevent Google account logout
+    for p in [local_dir / "Default", local_dir / "Profile 1", local_dir / "Profile 2"]:
+        pref_file = p / "Preferences"
+        if pref_file.is_file():
+            try:
+                pdata = json.loads(pref_file.read_text())
+                pdata.setdefault("signin", {})["allowed"] = False
+                pdata.setdefault("signin", {})["allowed_on_next_startup"] = False
+                pdata.setdefault("session", {})["restore_on_startup"] = 1
+                pref_file.write_text(json.dumps(pdata, indent=2))
+            except Exception:
+                pass
 
     # Enforce read/write permissions for local user
     for root, dirs, files in os.walk(local_dir):
@@ -448,14 +468,24 @@ def launch_profile(profile_name: str, server_url: str = DEFAULT_SERVER, token: s
         "--password-store=basic",
         "--no-first-run",
         "--no-default-browser-check",
-        "--disable-features=LockProfileCookieDatabase",
+        "--disable-sync",
+        "--disable-signin-scoped-device-id",
+        "--disable-features=AccountConsistency,DesktopIdentityConsistency,LockProfileCookieDatabase",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-session-crashed-bubble",
         "--restore-last-session",
         "--ozone-platform-hint=auto",
     ]
 
     m = p_info.get("machine", {})
-    if m.get("user_agent"):
+    ua_file = local_dir / "user-agent.txt"
+    if ua_file.is_file():
+        ua_str = ua_file.read_text().strip()
+        if ua_str:
+            flags.append(f"--user-agent={ua_str}")
+    elif m.get("user_agent"):
         flags.append(f"--user-agent={m['user_agent']}")
+
     if m.get("language"):
         flags.append(f"--lang={m['language']}")
     if m.get("screen_resolution"):
