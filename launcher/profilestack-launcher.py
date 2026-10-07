@@ -18,6 +18,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -48,7 +49,12 @@ def notify(title: str, msg: str):
     """Sends desktop notification if available."""
     if shutil.which("notify-send"):
         try:
-            subprocess.run(["notify-send", "-a", "ProfileStack", title, msg], check=False)
+            subprocess.run(
+                ["notify-send", "-a", "ProfileStack", title, msg],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
         except Exception:
             pass
 
@@ -172,20 +178,81 @@ class ProxyWrapper:
         t2.join()
 
 
+BROWSER_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko)"
+    " Chrome/128.0.0.0 Safari/537.36 ProfileStack/1.0"
+)
+AUTH_FILE = CONFIG_DIR / "auth.json"
+
+
 # ── Profile Client Engine ────────────────────────────────────────────────────
 class ProfileClient:
     def __init__(self, server_url: str = DEFAULT_SERVER, token: str = ""):
         self.server_url = server_url.rstrip("/")
         self.token = token
 
+    def _default_headers(self) -> dict:
+        return {
+            "User-Agent": BROWSER_UA,
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+    def _ensure_token(self):
+        if self.token:
+            return
+        if AUTH_FILE.is_file():
+            try:
+                data = json.loads(AUTH_FILE.read_text())
+                if data.get("server") == self.server_url and data.get("token"):
+                    self.token = data["token"]
+                    return
+            except Exception:
+                pass
+        try:
+            self.login("admin", "admin")
+        except Exception:
+            pass
+
+    def login(self, username: str = "admin", password: str = "admin") -> str:
+        url = f"{self.server_url}/api/auth/login"
+        payload = json.dumps({"username": username, "password": password, "remember": True}).encode()
+        h = self._default_headers()
+        h["Content-Type"] = "application/json"
+        req = urllib.request.Request(url, data=payload, headers=h, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as res:
+            cookie_hdr = res.headers.get("Set-Cookie", "")
+            m = re.search(r"(?:ps_session|profilestack_session)=([^;]+)", cookie_hdr)
+            if m:
+                self.token = m.group(1)
+                CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                AUTH_FILE.write_text(json.dumps({"server": self.server_url, "token": self.token, "username": username}))
+                return self.token
+        return ""
+
     def _req(self, endpoint: str, data=None, headers=None, method="GET"):
+        self._ensure_token()
         url = f"{self.server_url}{endpoint}"
-        h = headers or {}
+        h = self._default_headers()
+        if headers:
+            h.update(headers)
         if self.token:
             h["X-Session-Token"] = self.token
-            h["Cookie"] = f"profilestack_session={self.token}"
+            h["Cookie"] = f"ps_session={self.token}; profilestack_session={self.token}"
+            h["Authorization"] = f"Bearer {self.token}"
+
         req = urllib.request.Request(url, data=data, headers=h, method=method)
-        return urllib.request.urlopen(req, timeout=30)
+        try:
+            return urllib.request.urlopen(req, timeout=30)
+        except urllib.error.HTTPError as err:
+            if err.code in (401, 403) and self.login():
+                if self.token:
+                    h["X-Session-Token"] = self.token
+                    h["Cookie"] = f"ps_session={self.token}; profilestack_session={self.token}"
+                    h["Authorization"] = f"Bearer {self.token}"
+                req2 = urllib.request.Request(url, data=data, headers=h, method=method)
+                return urllib.request.urlopen(req2, timeout=30)
+            raise
 
     def get_profile_info(self, name: str) -> dict:
         with self._req(f"/api/profiles/{urllib.parse.quote(name)}") as res:
@@ -211,6 +278,15 @@ class ProfileClient:
                 for item in nested.iterdir():
                     shutil.move(str(item), str(target_dir / item.name))
                 shutil.rmtree(nested, ignore_errors=True)
+
+            # Enforce local user read/write permissions
+            for root, dirs, files in os.walk(target_dir):
+                for d in dirs:
+                    try: os.chmod(os.path.join(root, d), 0o755)
+                    except Exception: pass
+                for f in files:
+                    try: os.chmod(os.path.join(root, f), 0o644)
+                    except Exception: pass
         finally:
             tmp_path.unlink(missing_ok=True)
 
@@ -240,13 +316,15 @@ class ProfileClient:
                 body.extend(zf_read.read())
             body.extend(f"\r\n--{boundary}--\r\n".encode())
 
-            headers = {
+            headers = self._default_headers()
+            headers.update({
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
                 "Content-Length": str(len(body)),
-            }
+            })
             if self.token:
                 headers["X-Session-Token"] = self.token
-                headers["Cookie"] = f"profilestack_session={self.token}"
+                headers["Cookie"] = f"ps_session={self.token}; profilestack_session={self.token}"
+                headers["Authorization"] = f"Bearer {self.token}"
 
             req = urllib.request.Request(
                 f"{self.server_url}/api/profiles/{urllib.parse.quote(name)}/sync-back",

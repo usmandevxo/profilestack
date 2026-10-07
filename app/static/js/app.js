@@ -663,44 +663,33 @@ async function startAndOpenRealWindow(name) {
   }
 }
 
+let _cachedSessionToken = "";
+async function getSessionToken() {
+  if (_cachedSessionToken) return _cachedSessionToken;
+  try {
+    const res = await fetch('/api/auth/me');
+    if (res.ok) {
+      const data = await res.json();
+      _cachedSessionToken = data.token || "";
+      return _cachedSessionToken;
+    }
+  } catch (e) {}
+  return "";
+}
+
 async function launchOnLocalPC(name) {
   const serverUrl = window.location.origin;
-  let token = "";
-  const match = document.cookie.match(/(?:^|;\s*)profilestack_session=([^;]*)/);
-  if (match) token = match[1];
-
-  showToast(`Contacting local PC launcher for ${name}...`, 'info');
-
-  // 1. Try background local companion daemon (http://127.0.0.1:7890)
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1200);
-    const daemonRes = await fetch(`http://127.0.0.1:7890/launch?profile=${encodeURIComponent(name)}&server=${encodeURIComponent(serverUrl)}&token=${encodeURIComponent(token)}`, {
-      method: 'GET',
-      mode: 'cors',
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    if (daemonRes.ok) {
-      showToast(`Real browser window launched on your PC! (${name})`, 'success');
-      return;
-    }
-  } catch (err) {
-    // Daemon not running on port 7890, proceed to protocol handler
-  }
-
-  // 2. Invoke OS protocol handler (profilestack://launch)
+  const token = await getSessionToken();
   const protocolUrl = `profilestack://launch?profile=${encodeURIComponent(name)}&server=${encodeURIComponent(serverUrl)}&token=${encodeURIComponent(token)}`;
-  window.location.href = protocolUrl;
-  showToast(`Opening ${name} via desktop launcher...`, 'info');
 
-  // 3. Check daemon status; if not running, show setup modal after 1.5s
-  setTimeout(async () => {
-    const isRunning = await checkLocalDaemonStatus(false);
-    if (!isRunning) {
-      openModal('modal-launcher-setup');
-    }
-  }, 1500);
+  showToast(`Launching ${name} in real native browser...`, 'info');
+
+  // Trigger OS protocol handler via native navigation
+  const link = document.createElement('a');
+  link.href = protocolUrl;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 async function checkLocalDaemonStatus(showToastMsg = false) {

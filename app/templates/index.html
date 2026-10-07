@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png?v=20261003_dir2">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=20261003_dir2">
   <link rel="shortcut icon" href="/favicon.ico?v=20261003_dir2">
-  <link rel="stylesheet" href="/static/css/style.css?v=20261007_v2_pclauncher">
+  <link rel="stylesheet" href="/static/css/style.css?v=20261007_v3_hotfix">
 </head>
 <body>
   <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
@@ -612,6 +612,19 @@
           </div>
         </div>
 
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-size: 13px; font-weight: 600; color: var(--text-main);">2. Or Launch Directly From Your Terminal</span>
+          </div>
+          <p style="font-size: 12.5px; color: var(--text-muted); margin: 0 0 10px;">You can also launch any profile directly from your command line at any time:</p>
+          <div style="position: relative;">
+            <pre style="background: #0f172a; color: #38bdf8; padding: 12px 14px; border-radius: 6px; font-size: 12px; font-family: var(--font-mono); overflow-x: auto; margin: 0;"><code id="code-cli-launcher">profilestack-launcher Gs1</code></pre>
+            <button class="btn btn-primary btn-sm" onclick="copyCodeSnippet('code-cli-launcher')" style="position: absolute; right: 8px; top: 8px; font-size: 11px; padding: 4px 10px;">
+              Copy
+            </button>
+          </div>
+        </div>
+
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div style="background: #ffffff; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;">
             <h4 style="margin: 0 0 4px; font-size: 13px; font-weight: 600;">100% Real Browser Window</h4>
@@ -774,6 +787,6 @@ async with stdio_client(params) as (read, write):
   <!-- Toast Container -->
   <div id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20261007_v2_pclauncher"></script>
+  <script src="/static/js/app.js?v=20261007_v3_hotfix"></script>
 </body>
 </html>

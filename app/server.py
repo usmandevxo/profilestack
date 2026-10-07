@@ -220,12 +220,16 @@ async def logout_view(request: Request):
 @app.get("/api/auth/me")
 async def auth_me(request: Request):
     user = getattr(request.state, "user", None)
-    if not user:
-        token = request.cookies.get(auth.COOKIE_NAME)
-        user = auth.validate_session(token) if token else None
+    token = request.cookies.get(auth.COOKIE_NAME)
+    if not user and token:
+        user = auth.validate_session(token)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated.")
-    return {"username": user["username"], "created_at": user.get("created_at")}
+    return {
+        "username": user["username"],
+        "token": token or "",
+        "created_at": user.get("created_at"),
+    }
 
 
 # ── Demo / Showcase Dummy Data ────────────────────────────────────────────────
