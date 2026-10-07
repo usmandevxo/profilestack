@@ -69,6 +69,27 @@ if command -v systemctl &>/dev/null; then
     echo "[+] Local daemon started on http://127.0.0.1:7890"
 fi
 
+# Verify Chromium presence
+HAS_CHROME=0
+for b in chromium google-chrome-stable google-chrome brave-bin brave microsoft-edge-stable vivaldi ungoogled-chromium; do
+    if command -v "$b" &>/dev/null; then
+        HAS_CHROME=1
+        echo "[+] Found Chromium binary: $(command -v "$b")"
+        break
+    fi
+done
+
+if [ "$HAS_CHROME" -eq 0 ]; then
+    echo ""
+    echo "=========================================================="
+    echo "[!] ACTION REQUIRED: Chromium is not installed yet."
+    echo "    ProfileStack requires a Chromium-based browser."
+    echo "    Install it on CachyOS / Arch by running:"
+    echo "        sudo pacman -S chromium"
+    echo "=========================================================="
+    echo ""
+fi
+
 # Ensure ~/.local/bin is in PATH hint
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     echo "[i] Tip: Add ~/.local/bin to your PATH in ~/.bashrc or ~/.zshrc:"

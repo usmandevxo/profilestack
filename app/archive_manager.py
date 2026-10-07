@@ -9,8 +9,23 @@ from app.config import ARCHIVES_DIR, PROFILES_DIR
 from app.profile_manager import _load_registry, _save_registry, _get_dir_size_mb
 from app.validator import clean_stale_locks, fix_profile_permissions, validate_profile_name
 
-_EXCLUDE_DIRS = {"Cache", "Code Cache", "GPUCache", "ShaderCache", "GrShaderCache"}
-_EXCLUDE_FILES = {"SingletonLock", "SingletonCookie", "Lock", "LOCK"}
+_EXCLUDE_DIRS = {
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "ShaderCache",
+    "GrShaderCache",
+    "GraphiteDawnCache",
+    "DawnWebGPUCache",
+    "DawnGraphiteCache",
+    "component_crx_cache",
+    "OnDeviceHeadSuggestModel",
+    "hyphen-data",
+    "ZxcvbnData",
+    "Crashpad",
+    "Crash Reports",
+}
+_EXCLUDE_FILES = {"SingletonLock", "SingletonCookie", "SingletonSocket", "Lock", "LOCK"}
 
 
 def _safe_member_path(member_path: str) -> str:
@@ -48,8 +63,7 @@ def export_profile_zip(profile_name: str) -> Path:
                     continue
                 try:
                     rel_path = os.path.relpath(fpath, p_dir)
-                    arcname = os.path.join(profile_name, rel_path)
-                    zf.write(fpath, arcname)
+                    zf.write(fpath, rel_path)
                 except (OSError, PermissionError):
                     continue
 

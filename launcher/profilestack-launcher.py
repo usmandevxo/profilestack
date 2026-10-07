@@ -41,12 +41,26 @@ COMMON_BROWSER_BINS = [
     "microsoft-edge-stable",
     "microsoft-edge",
     "vivaldi",
-    "cachy-browser",
+    "ungoogled-chromium",
 ]
+
+LOG_FILE = CONFIG_DIR / "launcher.log"
+
+
+def log(msg: str):
+    line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
+    print(line)
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(LOG_FILE, "a") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
 
 
 def notify(title: str, msg: str):
     """Sends desktop notification if available."""
+    log(f"Notification: [{title}] {msg}")
     if shutil.which("notify-send"):
         try:
             subprocess.run(
@@ -342,33 +356,50 @@ class ProfileClient:
 def launch_profile(profile_name: str, server_url: str = DEFAULT_SERVER, token: str = ""):
     browser_bin = find_browser_binary()
     if not browser_bin:
-        err = "No Chromium-based browser found. Install Chromium: sudo pacman -S chromium"
-        print(err, file=sys.stderr)
+        err = "Chromium browser not found! Please install Chromium on CachyOS: sudo pacman -S chromium"
+        log(f"[!] {err}")
         notify("ProfileStack Error", err)
         return
 
-    notify("ProfileStack", f"Syncing and launching profile: {profile_name}")
-    print(f"[*] Connecting to {server_url} for profile '{profile_name}'...")
+    log(f"[*] Preparing profile '{profile_name}' via {browser_bin} (server: {server_url})...")
+    notify("ProfileStack", f"Launching {profile_name} in native Chromium...")
 
     client = ProfileClient(server_url, token)
     try:
         p_info = client.get_profile_info(profile_name)
     except Exception as e:
-        print(f"[!] Failed to fetch profile info: {e}")
-        notify("ProfileStack Error", f"Failed to fetch profile: {e}")
+        err = f"Failed to fetch profile info from {server_url}: {e}"
+        log(f"[!] {err}")
+        notify("ProfileStack Error", f"Profile fetch error: {e}")
         return
 
     local_dir = PROFILES_LOCAL_DIR / profile_name
-    print(f"[*] Synchronizing state into {local_dir}...")
+    local_dir.mkdir(parents=True, exist_ok=True)
+
+    log(f"[*] Synchronizing state into {local_dir}...")
     try:
         client.download_profile(profile_name, local_dir)
+        log("[+] State sync complete.")
     except Exception as e:
-        print(f"[!] Warning: sync-down failed ({e}), continuing with local cache if available.")
+        log(f"[!] Warning: sync-down failed ({e}), continuing with local cache if available.")
 
-    # Clean local lock files
-    for lock in ["SingletonLock", "SingletonCookie", "SingletonSocket", "LOCK"]:
-        (local_dir / lock).unlink(missing_ok=True)
-        (local_dir / "Default" / lock).unlink(missing_ok=True)
+    # Remove all stale lock files and symlinks forcefully
+    for p in [local_dir, local_dir / "Default"]:
+        if p.is_dir():
+            for item in p.iterdir():
+                name_lower = item.name.lower()
+                if any(k in name_lower for k in ["singleton", "lock"]):
+                    try: item.unlink(missing_ok=True)
+                    except Exception: pass
+
+    # Enforce read/write permissions for local user
+    for root, dirs, files in os.walk(local_dir):
+        for d in dirs:
+            try: os.chmod(os.path.join(root, d), 0o755)
+            except Exception: pass
+        for f in files:
+            try: os.chmod(os.path.join(root, f), 0o644)
+            except Exception: pass
 
     # Proxy configuration
     proxy_val = p_info.get("proxy", "")
@@ -397,7 +428,7 @@ def launch_profile(profile_name: str, server_url: str = DEFAULT_SERVER, token: s
         host = parsed.hostname or "127.0.0.1"
         port = parsed.port or 1080
         if parsed.username and parsed.password:
-            print(f"[*] Starting local proxy wrapper for {scheme}://{host}:{port}...")
+            log(f"[*] Starting local proxy wrapper for {scheme}://{host}:{port}...")
             proxy_wrapper = ProxyWrapper(scheme, host, port, parsed.username, parsed.password)
             local_proxy_port = proxy_wrapper.start()
             flags.append(f"--proxy-server=socks5://127.0.0.1:{local_proxy_port}")
@@ -407,25 +438,46 @@ def launch_profile(profile_name: str, server_url: str = DEFAULT_SERVER, token: s
     start_url = p_info.get("start_url") or "https://www.google.com"
     flags.append(start_url)
 
-    print(f"[*] Launching REAL native browser window: {browser_bin}")
-    print(f"[*] Flags: {' '.join(flags)}")
-    notify("ProfileStack Active", f"Real browser window opened for {profile_name}")
+    log(f"[*] Executing browser: {' '.join(flags)}")
 
+    proc = None
     try:
-        proc = subprocess.Popen(flags)
+        proc = subprocess.Popen(
+            flags,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        # Check for immediate crash within 1.5s
+        time.sleep(1.5)
+        ret = proc.poll()
+        if ret is not None:
+            _, err_msg = proc.communicate()
+            err_detail = err_msg.strip() if err_msg else f"exit code {ret}"
+            log(f"[!] Browser terminated immediately! Detail: {err_detail}")
+            notify("ProfileStack Error", f"Browser crashed on start: {err_detail[:60]}")
+            return
+
+        log(f"[+] Real native browser window running (PID {proc.pid})")
+        notify("ProfileStack Active", f"Real browser window opened for {profile_name}")
         proc.wait()
+        log(f"[*] Browser window closed (PID {proc.pid})")
+    except Exception as e:
+        log(f"[!] Failed to launch browser process: {e}")
+        notify("ProfileStack Error", f"Could not launch browser: {e}")
+        return
     finally:
         if proxy_wrapper:
             proxy_wrapper.stop()
 
-    print("[*] Browser closed. Syncing session and cookies back to cloud...")
+    log(f"[*] Syncing session state back to {server_url}...")
     notify("ProfileStack", f"Syncing {profile_name} session to server...")
     try:
         res = client.upload_profile(profile_name, local_dir)
-        print(f"[+] Sync successful: {res}")
+        log(f"[+] Sync successful: {res}")
         notify("ProfileStack Synced", f"Profile {profile_name} saved to server.")
     except Exception as e:
-        print(f"[!] Warning: failed to sync back to server: {e}")
+        log(f"[!] Warning: failed to sync back to server: {e}")
         notify("ProfileStack Sync Warning", f"Could not sync to cloud: {e}")
 
 
