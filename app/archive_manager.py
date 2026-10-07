@@ -135,3 +135,65 @@ def import_profile_zip(archive_path: Path) -> dict:
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def sync_back_profile_zip(profile_name: str, archive_path: Path) -> dict:
+    """Updates an existing profile with session state uploaded from the local launcher."""
+    profile_name = validate_profile_name(profile_name)
+    reg = _load_registry()
+    if profile_name not in reg:
+        raise ValueError(f"Profile '{profile_name}' not found.")
+
+    p_dir = Path(reg[profile_name]["path"])
+    p_dir.mkdir(parents=True, exist_ok=True)
+
+    if not archive_path.is_file():
+        raise FileNotFoundError(f"Archive file not found: {archive_path}")
+
+    tmp_dir = tempfile.mkdtemp(prefix="profilestack-sync-")
+    try:
+        if not zipfile.is_zipfile(archive_path):
+            raise ValueError("Unsupported archive. Only standard .zip is supported.")
+
+        with zipfile.ZipFile(archive_path, "r") as zf:
+            members = zf.infolist()
+            for info in members:
+                _safe_member_path(info.filename)
+                unix_mode = (info.external_attr >> 16) & 0xFFFF
+                if unix_mode and (unix_mode & 0xA000) == 0xA000:
+                    continue  # skip symlinks safely
+            zf.extractall(tmp_dir)
+
+        entries = os.listdir(tmp_dir)
+        dirs = [e for e in entries if os.path.isdir(os.path.join(tmp_dir, e))]
+
+        if len(dirs) == 1 and dirs[0].lower() not in {"default", "crash reports"}:
+            source_dir = Path(tmp_dir) / dirs[0]
+        else:
+            source_dir = Path(tmp_dir)
+
+        # Merge updated files into existing profile directory
+        for root, _, files in os.walk(source_dir):
+            rel = os.path.relpath(root, source_dir)
+            target_sub = p_dir / rel if rel != "." else p_dir
+            target_sub.mkdir(parents=True, exist_ok=True)
+            for f in files:
+                if f in _EXCLUDE_FILES:
+                    continue
+                src_f = Path(root) / f
+                dst_f = target_sub / f
+                try:
+                    shutil.copy2(src_f, dst_f)
+                except Exception:
+                    pass
+
+        clean_stale_locks(p_dir)
+        fix_profile_permissions(p_dir)
+        size_mb = _get_dir_size_mb(p_dir)
+        reg[profile_name]["size_mb"] = size_mb
+        _save_registry(reg)
+
+        return {"status": "synced", "profile": profile_name, "size_mb": size_mb}
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+

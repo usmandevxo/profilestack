@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png?v=20261003_dir2">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=20261003_dir2">
   <link rel="shortcut icon" href="/favicon.ico?v=20261003_dir2">
-  <link rel="stylesheet" href="/static/css/style.css?v=20261007_v1_realwin">
+  <link rel="stylesheet" href="/static/css/style.css?v=20261007_v2_pclauncher">
 </head>
 <body>
   <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
@@ -163,6 +163,14 @@
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
             <span class="desktop-btn-label">Import</span>
+          </button>
+          <button class="btn btn-secondary btn-sm" id="btn-topbar-launcher" title="Setup 1-Click Native Browser Launcher on Your PC">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <span class="desktop-btn-label">Native PC Launcher</span>
           </button>
           <a href="/api/docs" target="_blank" class="btn btn-secondary btn-sm" title="View OpenAPI / Swagger Documentation">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -564,6 +572,74 @@
     </div>
   </div>
 
+  <!-- Local PC Launcher Modal -->
+  <div class="modal-overlay" id="modal-launcher-setup">
+    <div class="modal modal-wide" style="max-width: 620px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="width: 34px; height: 34px; border-radius: 8px; background: #f0fdf4; color: #16a34a; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: var(--text-main);">Native PC Browser Launcher</h3>
+            <p style="margin: 0; font-size: 12px; color: var(--text-muted);">Launch remote profiles in 100% real, native Chromium desktop windows on your local PC.</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" onclick="closeModal('modal-launcher-setup')" aria-label="Close dialog" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body" style="padding: 20px 24px; display: flex; flex-direction: column; gap: 18px;">
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-size: 13px; font-weight: 600; color: var(--text-main);">One-Line Setup for CachyOS / Linux Desktop</span>
+            <span class="badge" id="launcher-status-badge" style="font-size: 11px;">Checking...</span>
+          </div>
+          <p style="font-size: 12.5px; color: var(--text-muted); margin: 0 0 10px;">Run this command once in your terminal to install the launcher and register the system protocol:</p>
+          <div style="position: relative;">
+            <pre style="background: #0f172a; color: #38bdf8; padding: 12px 14px; border-radius: 6px; font-size: 12px; font-family: var(--font-mono); overflow-x: auto; margin: 0;"><code id="code-install-launcher">curl -sSL https://profilestack.apanel.eu.cc/install-launcher.sh | bash</code></pre>
+            <button class="btn btn-primary btn-sm" onclick="copyCodeSnippet('code-install-launcher')" style="position: absolute; right: 8px; top: 8px; font-size: 11px; padding: 4px 10px;">
+              Copy
+            </button>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div style="background: #ffffff; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;">
+            <h4 style="margin: 0 0 4px; font-size: 13px; font-weight: 600;">100% Real Browser Window</h4>
+            <p style="margin: 0; font-size: 12px; color: var(--text-muted);">Real address bar, real tabs, real GPU hardware acceleration, and zero VNC latency.</p>
+          </div>
+          <div style="background: #ffffff; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;">
+            <h4 style="margin: 0 0 4px; font-size: 13px; font-weight: 600;">Cloud Session Sync</h4>
+            <p style="margin: 0; font-size: 12px; color: var(--text-muted);">All cookies, logins, and session data automatically sync back to your ProfileStack server when closed.</p>
+          </div>
+        </div>
+
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between;">
+          <div style="font-size: 12.5px; color: #1e40af;">
+            <strong>Test Connection:</strong> Check if your local companion daemon is responding on port 7890.
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="checkLocalDaemonStatus(true)">
+            Test Local Daemon
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
+        <span style="font-size: 12px; color: var(--text-muted);">Supports CachyOS, Arch, Ubuntu, Fedora, Debian, and macOS.</span>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-launcher-setup')">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MCP AI Configuration Modal -->
   <div class="modal-overlay" id="modal-mcp-config">
     <div class="modal modal-wide" style="max-width: 640px;">
@@ -698,6 +774,6 @@ async with stdio_client(params) as (read, write):
   <!-- Toast Container -->
   <div id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20261007_v1_realwin"></script>
+  <script src="/static/js/app.js?v=20261007_v2_pclauncher"></script>
 </body>
 </html>

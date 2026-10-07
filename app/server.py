@@ -1,4 +1,5 @@
 import shutil
+import time
 from pathlib import Path
 from urllib.parse import quote
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -52,6 +53,8 @@ PUBLIC_PREFIXES = (
     "/favicon.ico",
     "/favicon.svg",
     "/apple-touch-icon.png",
+    "/install-launcher.sh",
+    "/launcher/",
 )
 
 
@@ -62,6 +65,13 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     token = request.cookies.get(auth.COOKIE_NAME)
+    if not token:
+        token = request.headers.get("X-Session-Token") or request.query_params.get("token")
+        if not token:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:].strip()
+
     session = auth.validate_session(token) if token else None
 
     if session:
@@ -515,6 +525,37 @@ async def import_profile(file: UploadFile = File(...)):
         return {"status": "success", "profile": entry}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/profiles/{name}/sync-back")
+async def sync_back_profile(name: str, file: UploadFile = File(...)):
+    try:
+        ARCHIVES_DIR.mkdir(parents=True, exist_ok=True)
+        dest = ARCHIVES_DIR / f"{name}_sync_{int(time.time())}.zip"
+        with open(dest, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        result = am.sync_back_profile_zip(name, dest)
+        dest.unlink(missing_ok=True)
+        return {"status": "success", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/install-launcher.sh")
+async def get_install_launcher_script():
+    script_path = BASE_DIR / "launcher" / "install-launcher.sh"
+    if not script_path.is_file():
+        raise HTTPException(status_code=404, detail="Install script not found.")
+    return FileResponse(path=str(script_path), media_type="text/x-shellscript", filename="install-launcher.sh")
+
+
+@app.get("/launcher/profilestack-launcher.py")
+async def get_launcher_binary():
+    bin_path = BASE_DIR / "launcher" / "profilestack-launcher.py"
+    if not bin_path.is_file():
+        raise HTTPException(status_code=404, detail="Launcher binary not found.")
+    return FileResponse(path=str(bin_path), media_type="text/x-python", filename="profilestack-launcher.py")
 
 
 # ── Global Proxy Store ────────────────────────────────────────────────────────

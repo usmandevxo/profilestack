@@ -317,9 +317,10 @@ function renderProfilesTable() {
               </div>
               <div class="profile-meta">
                 <div class="profile-name-row">
-                  <a href="${isRunning ? `/viewer/${encodeURIComponent(p.name)}` : 'javascript:void(0)'}" 
-                     class="profile-name-link ${isRunning ? 'clickable' : ''}" 
-                     ${isRunning ? `onclick="event.preventDefault(); openRealWindow('${esc(p.name)}');" title="Launch Real Standalone Window"` : `onclick="openEditModal('${esc(p.name)}')"`}>
+                  <a href="javascript:void(0)" 
+                     class="profile-name-link clickable" 
+                     onclick="launchOnLocalPC('${esc(p.name)}')" 
+                     title="Launch Real Native Chromium on Your PC">
                     ${esc(p.name)}
                   </a>
                   ${p.start_url ? `
@@ -387,23 +388,23 @@ function renderProfilesTable() {
           <td style="text-align: right;">
             <div class="row-actions-group">
               ${isRunning ? `
-                <button class="btn btn-primary btn-sm btn-action-main" onclick="openRealWindow('${esc(p.name)}')" title="Launch as dedicated native OS window on your PC">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                  <span>Real Window</span>
-                </button>
-                <button class="btn btn-secondary btn-sm btn-action-main" onclick="openViewer('${esc(p.name)}')" title="Open Interactive Stream in Browser Tab">
+                <button class="btn btn-primary btn-sm btn-action-main" onclick="launchOnLocalPC('${esc(p.name)}')" title="Launch 100% REAL native Chromium window on your PC">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                  <span>Tab</span>
+                  <span>Real Browser</span>
+                </button>
+                <button class="btn btn-secondary btn-sm btn-action-main" onclick="openViewer('${esc(p.name)}')" title="Open Web Screen Stream">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                  <span>Screen</span>
                 </button>
                 <button class="btn btn-danger-soft btn-sm btn-icon-action" onclick="stopProfile('${esc(p.name)}')" title="Stop Active Container">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"></rect></svg>
                 </button>
               ` : `
-                <button class="btn btn-primary btn-sm btn-action-main" onclick="startAndOpenRealWindow('${esc(p.name)}')" title="Start container and launch directly in Real Window on your PC">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                  <span>Real Window</span>
+                <button class="btn btn-primary btn-sm btn-action-main" onclick="launchOnLocalPC('${esc(p.name)}')" title="Launch 100% REAL native Chromium window on your PC">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                  <span>Real Browser</span>
                 </button>
-                <button class="btn btn-success btn-sm btn-action-main" onclick="startProfile('${esc(p.name)}')" title="Launch Profile Container in Background">
+                <button class="btn btn-success btn-sm btn-action-main" onclick="startProfile('${esc(p.name)}')" title="Start Cloud Container">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 18 12 6 20 6 4"></polygon></svg>
                   <span>Start</span>
                 </button>
@@ -487,18 +488,18 @@ function renderProfilesTable() {
 
           <div class="profile-feed-actions">
             ${isRunning ? `
-              <button class="btn btn-primary" onclick="openRealWindow('${esc(p.name)}')">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                Real Window
+              <button class="btn btn-primary" onclick="launchOnLocalPC('${esc(p.name)}')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                Real Browser (PC)
               </button>
-              <button class="btn btn-secondary" onclick="openViewer('${esc(p.name)}')">Tab View</button>
+              <button class="btn btn-secondary" onclick="openViewer('${esc(p.name)}')">Web Screen</button>
               <button class="btn btn-danger" onclick="stopProfile('${esc(p.name)}')">Stop</button>
             ` : `
-              <button class="btn btn-primary" onclick="startAndOpenRealWindow('${esc(p.name)}')">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                Real Window
+              <button class="btn btn-primary" onclick="launchOnLocalPC('${esc(p.name)}')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                Real Browser (PC)
               </button>
-              <button class="btn btn-success" onclick="startProfile('${esc(p.name)}')">Start</button>
+              <button class="btn btn-success" onclick="startProfile('${esc(p.name)}')">Start Cloud</button>
             `}
             <button class="btn btn-secondary" onclick="openEditModal('${esc(p.name)}')">Edit</button>
             <button class="btn btn-secondary" onclick="exportProfile('${esc(p.name)}')">Export</button>
@@ -662,6 +663,72 @@ async function startAndOpenRealWindow(name) {
   }
 }
 
+async function launchOnLocalPC(name) {
+  const serverUrl = window.location.origin;
+  let token = "";
+  const match = document.cookie.match(/(?:^|;\s*)profilestack_session=([^;]*)/);
+  if (match) token = match[1];
+
+  showToast(`Contacting local PC launcher for ${name}...`, 'info');
+
+  // 1. Try background local companion daemon (http://127.0.0.1:7890)
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const daemonRes = await fetch(`http://127.0.0.1:7890/launch?profile=${encodeURIComponent(name)}&server=${encodeURIComponent(serverUrl)}&token=${encodeURIComponent(token)}`, {
+      method: 'GET',
+      mode: 'cors',
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if (daemonRes.ok) {
+      showToast(`Real browser window launched on your PC! (${name})`, 'success');
+      return;
+    }
+  } catch (err) {
+    // Daemon not running on port 7890, proceed to protocol handler
+  }
+
+  // 2. Invoke OS protocol handler (profilestack://launch)
+  const protocolUrl = `profilestack://launch?profile=${encodeURIComponent(name)}&server=${encodeURIComponent(serverUrl)}&token=${encodeURIComponent(token)}`;
+  window.location.href = protocolUrl;
+  showToast(`Opening ${name} via desktop launcher...`, 'info');
+
+  // 3. Check daemon status; if not running, show setup modal after 1.5s
+  setTimeout(async () => {
+    const isRunning = await checkLocalDaemonStatus(false);
+    if (!isRunning) {
+      openModal('modal-launcher-setup');
+    }
+  }, 1500);
+}
+
+async function checkLocalDaemonStatus(showToastMsg = false) {
+  const badge = document.getElementById('launcher-status-badge');
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const res = await fetch('http://127.0.0.1:7890/status', { mode: 'cors', signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json();
+      if (badge) {
+        badge.className = 'badge badge-running';
+        badge.textContent = `Connected (${data.browser || 'Chromium'})`;
+      }
+      if (showToastMsg) showToast('Local Companion Daemon is active and ready on port 7890!', 'success');
+      return true;
+    }
+  } catch (e) {
+    if (badge) {
+      badge.className = 'badge badge-stopped';
+      badge.textContent = 'Not Running';
+    }
+    if (showToastMsg) showToast('Local daemon not detected on port 7890. Run the install command.', 'warning');
+    return false;
+  }
+}
+
 function openViewer(name) {
   window.open(`/viewer/${encodeURIComponent(name)}`, '_blank');
 }
@@ -695,6 +762,12 @@ document.getElementById('btn-mobile-new')?.addEventListener('click', triggerNewP
 // Import Profile from Topbar
 document.getElementById('btn-topbar-import')?.addEventListener('click', () => {
   openModal('modal-import');
+});
+
+// Native PC Launcher Setup from Topbar
+document.getElementById('btn-topbar-launcher')?.addEventListener('click', () => {
+  openModal('modal-launcher-setup');
+  checkLocalDaemonStatus(false);
 });
 
 document.getElementById('create-proxy-select')?.addEventListener('change', (e) => {
