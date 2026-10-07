@@ -319,7 +319,7 @@ function renderProfilesTable() {
                 <div class="profile-name-row">
                   <a href="${isRunning ? `/viewer/${encodeURIComponent(p.name)}` : 'javascript:void(0)'}" 
                      class="profile-name-link ${isRunning ? 'clickable' : ''}" 
-                     ${isRunning ? 'target="_blank" title="Open Interactive Stream"' : `onclick="openEditModal('${esc(p.name)}')"`}>
+                     ${isRunning ? `onclick="event.preventDefault(); openRealWindow('${esc(p.name)}');" title="Launch Real Standalone Window"` : `onclick="openEditModal('${esc(p.name)}')"`}>
                     ${esc(p.name)}
                   </a>
                   ${p.start_url ? `
@@ -387,17 +387,25 @@ function renderProfilesTable() {
           <td style="text-align: right;">
             <div class="row-actions-group">
               ${isRunning ? `
-                <button class="btn btn-primary btn-sm btn-action-main" onclick="openViewer('${esc(p.name)}')" title="Open HTML5 Interactive Stream">
+                <button class="btn btn-primary btn-sm btn-action-main" onclick="openRealWindow('${esc(p.name)}')" title="Launch as dedicated native OS window on your PC">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                  <span>Real Window</span>
+                </button>
+                <button class="btn btn-secondary btn-sm btn-action-main" onclick="openViewer('${esc(p.name)}')" title="Open Interactive Stream in Browser Tab">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                  <span>Screen</span>
+                  <span>Tab</span>
                 </button>
                 <button class="btn btn-danger-soft btn-sm btn-icon-action" onclick="stopProfile('${esc(p.name)}')" title="Stop Active Container">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"></rect></svg>
                 </button>
               ` : `
-                <button class="btn btn-success btn-sm btn-action-main" onclick="startProfile('${esc(p.name)}')" title="Launch Profile Container">
+                <button class="btn btn-primary btn-sm btn-action-main" onclick="startAndOpenRealWindow('${esc(p.name)}')" title="Start container and launch directly in Real Window on your PC">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                  <span>Real Window</span>
+                </button>
+                <button class="btn btn-success btn-sm btn-action-main" onclick="startProfile('${esc(p.name)}')" title="Launch Profile Container in Background">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 18 12 6 20 6 4"></polygon></svg>
-                  <span>Launch</span>
+                  <span>Start</span>
                 </button>
               `}
 
@@ -479,10 +487,18 @@ function renderProfilesTable() {
 
           <div class="profile-feed-actions">
             ${isRunning ? `
-              <button class="btn btn-secondary" onclick="openViewer('${esc(p.name)}')">View Screen</button>
+              <button class="btn btn-primary" onclick="openRealWindow('${esc(p.name)}')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                Real Window
+              </button>
+              <button class="btn btn-secondary" onclick="openViewer('${esc(p.name)}')">Tab View</button>
               <button class="btn btn-danger" onclick="stopProfile('${esc(p.name)}')">Stop</button>
             ` : `
-              <button class="btn btn-success" onclick="startProfile('${esc(p.name)}')">Launch</button>
+              <button class="btn btn-primary" onclick="startAndOpenRealWindow('${esc(p.name)}')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                Real Window
+              </button>
+              <button class="btn btn-success" onclick="startProfile('${esc(p.name)}')">Start</button>
             `}
             <button class="btn btn-secondary" onclick="openEditModal('${esc(p.name)}')">Edit</button>
             <button class="btn btn-secondary" onclick="exportProfile('${esc(p.name)}')">Export</button>
@@ -520,6 +536,128 @@ async function stopProfile(name) {
     await fetchTelemetry();
     await fetchFolders();
   } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function openRealWindow(name) {
+  const profile = allProfiles.find(p => p.name === name);
+  let w = 1440;
+  let h = 900;
+  if (profile && profile.machine && profile.machine.screen_resolution) {
+    const parts = profile.machine.screen_resolution.split('x');
+    if (parts.length === 2) {
+      w = parseInt(parts[0], 10) || 1440;
+      h = parseInt(parts[1], 10) || 900;
+    }
+  }
+  const screenW = window.screen.availWidth || window.innerWidth || 1920;
+  const screenH = window.screen.availHeight || window.innerHeight || 1080;
+  const targetW = Math.min(screenW - 20, Math.max(960, w));
+  const targetH = Math.min(screenH - 50, Math.max(640, h + 50));
+  const left = Math.max(0, Math.round((screenW - targetW) / 2));
+  const top = Math.max(0, Math.round((screenH - targetH) / 2));
+
+  const safeId = `ProfileStack_${name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const features = `popup=yes,width=${targetW},height=${targetH},left=${left},top=${top},resizable=yes,scrollbars=no,status=no,toolbar=no,menubar=no,location=no`;
+  const url = `/viewer/${encodeURIComponent(name)}?app=1`;
+  const win = window.open(url, safeId, features);
+  if (win) {
+    win.focus();
+  }
+  return win;
+}
+
+async function startAndOpenRealWindow(name) {
+  const profile = allProfiles.find(p => p.name === name);
+  let w = 1440;
+  let h = 900;
+  if (profile && profile.machine && profile.machine.screen_resolution) {
+    const parts = profile.machine.screen_resolution.split('x');
+    if (parts.length === 2) {
+      w = parseInt(parts[0], 10) || 1440;
+      h = parseInt(parts[1], 10) || 900;
+    }
+  }
+  const screenW = window.screen.availWidth || window.innerWidth || 1920;
+  const screenH = window.screen.availHeight || window.innerHeight || 1080;
+  const targetW = Math.min(screenW - 20, Math.max(960, w));
+  const targetH = Math.min(screenH - 50, Math.max(640, h + 50));
+  const left = Math.max(0, Math.round((screenW - targetW) / 2));
+  const top = Math.max(0, Math.round((screenH - targetH) / 2));
+
+  const safeId = `ProfileStack_${name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const features = `popup=yes,width=${targetW},height=${targetH},left=${left},top=${top},resizable=yes,scrollbars=no,status=no,toolbar=no,menubar=no,location=no`;
+
+  // Pre-open window synchronously to prevent popup blocker on async fetch
+  const win = window.open('about:blank', safeId, features);
+  if (win) {
+    win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Launching ${esc(name)} - ProfileStack</title>
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overflow: hidden;
+    }
+    .card {
+      text-align: center;
+      padding: 36px 32px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 14px;
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.4);
+      max-width: 440px;
+    }
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid rgba(255,255,255,0.15);
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 18px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h2 { font-size: 19px; font-weight: 700; margin: 0 0 8px; color: #f1f5f9; }
+    p { font-size: 13.5px; color: #94a3b8; margin: 0; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <h2>Starting Container: ${esc(name)}</h2>
+    <p>Booting isolated Chromium container, spoofing fingerprints, and initializing display stream...</p>
+  </div>
+</body>
+</html>`);
+  }
+
+  try {
+    showToast(`Starting profile ${name}...`, 'info');
+    const res = await fetch(`/api/profiles/${encodeURIComponent(name)}/start`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Start failed');
+    showToast(`Profile ${name} started on port ${data.vnc_port}`, 'success');
+    if (win) {
+      win.location.href = `/viewer/${encodeURIComponent(name)}?app=1`;
+      win.focus();
+    }
+    await fetchProfiles();
+    await fetchTelemetry();
+    await fetchFolders();
+  } catch (err) {
+    if (win) win.close();
     showToast(err.message, 'error');
   }
 }

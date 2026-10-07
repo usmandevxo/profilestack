@@ -9,12 +9,60 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png?v=20261003_dir2">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=20261003_dir2">
   <link rel="shortcut icon" href="/favicon.ico?v=20261003_dir2">
-  <link rel="stylesheet" href="/static/css/style.css?v=20261003_dir2">
+  <link rel="stylesheet" href="/static/css/style.css?v=20261007_v1_realwin">
   <style>
     body, html {
       height: 100%;
       overflow: hidden;
       background: #0f172a;
+    }
+    /* Real Window & App Mode Styling */
+    body.app-window-mode .viewer-bar {
+      height: 44px;
+      background: #f8fafc;
+      padding: 0 12px;
+    }
+    body.app-window-mode .viewer-frame-wrap {
+      height: calc(100vh - 44px);
+    }
+    .zen-mode .viewer-bar {
+      display: none !important;
+    }
+    .zen-mode .viewer-frame-wrap {
+      height: 100vh !important;
+    }
+    .zen-exit-pill {
+      position: fixed;
+      top: 10px;
+      right: 14px;
+      z-index: 9999;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #f8fafc;
+      font-size: 11.5px;
+      font-weight: 500;
+      border-radius: 20px;
+      padding: 5px 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      opacity: 0.45;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .zen-exit-pill:hover {
+      opacity: 1;
+      transform: translateY(1px);
+    }
+    .btn-label-desktop {
+      display: inline;
+    }
+    @media (max-width: 860px) {
+      .btn-label-desktop {
+        display: none;
+      }
     }
     .viewer-layout {
       display: flex;
@@ -373,6 +421,10 @@
 </head>
 <body>
   <div class="viewer-layout">
+    <button class="zen-exit-pill" id="btn-zen-exit" title="Restore Toolbar" style="display:none;">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <span>Show Controls</span>
+    </button>
     <header class="viewer-bar">
       <div class="viewer-title-group">
         <a href="/" class="btn btn-secondary btn-sm" title="Back to Dashboard">
@@ -398,6 +450,31 @@
       </div>
 
       <div style="display:flex; align-items:center; gap:6px;">
+        <button class="btn btn-secondary btn-sm" id="btn-popout-window" title="Launch as dedicated native OS window on your PC">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+          <span class="btn-label-desktop">Real Window</span>
+        </button>
+        <button class="btn btn-secondary btn-sm" id="btn-zen-mode" title="Zen Mode: Hide Toolbar for 100% Pure Browser View">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="4 14 10 14 10 20"></polyline>
+            <polyline points="20 10 14 10 14 4"></polyline>
+            <line x1="14" y1="10" x2="21" y2="3"></line>
+            <line x1="3" y1="21" x2="10" y2="14"></line>
+          </svg>
+          <span class="btn-label-desktop">Zen</span>
+        </button>
+        <button class="btn btn-secondary btn-sm" id="btn-fullscreen-toggle" title="Toggle Fullscreen Mode (F11)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <polyline points="9 21 3 21 3 15"></polyline>
+            <line x1="21" y1="3" x2="14" y2="10"></line>
+            <line x1="3" y1="21" x2="10" y2="14"></line>
+          </svg>
+        </button>
         <button class="btn btn-secondary btn-sm" id="btn-paste-clipboard" title="Paste from local clipboard into browser (Ctrl+V)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
@@ -978,6 +1055,55 @@
     btnRight?.addEventListener('click', (e) => {
       e.preventDefault();
       sendClick(4);
+    });
+
+    // ── App Mode & Real Standalone Window Logic ─────────────────────────────
+    const isAppMode = window.location.search.includes('app=1') || window.opener;
+    if (isAppMode) {
+      document.body.classList.add('app-window-mode');
+      const popoutBtn = document.getElementById('btn-popout-window');
+      if (popoutBtn) {
+        popoutBtn.style.display = 'none'; // Already running inside standalone Real Window
+      }
+    }
+
+    // Launch standalone Real Window
+    document.getElementById('btn-popout-window')?.addEventListener('click', () => {
+      const w = Math.min(window.screen.availWidth - 20, 1440);
+      const h = Math.min(window.screen.availHeight - 40, 900);
+      const left = Math.round((window.screen.availWidth - w) / 2);
+      const top = Math.round((window.screen.availHeight - h) / 2);
+      const url = window.location.pathname + '?app=1';
+      const features = `popup=yes,width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no,status=no,toolbar=no,menubar=no,location=no`;
+      const win = window.open(url, '_blank', features);
+      if (win) {
+        win.focus();
+        showToast('Launched in dedicated Real Window');
+      }
+    });
+
+    // Zen Mode (hide header completely for pure browser view)
+    const zenExitBtn = document.getElementById('btn-zen-exit');
+    document.getElementById('btn-zen-mode')?.addEventListener('click', () => {
+      document.body.classList.add('zen-mode');
+      if (zenExitBtn) zenExitBtn.style.display = 'inline-flex';
+      showToast('Zen Mode active: Toolbar hidden. Hover top-right to restore.');
+    });
+
+    zenExitBtn?.addEventListener('click', () => {
+      document.body.classList.remove('zen-mode');
+      zenExitBtn.style.display = 'none';
+    });
+
+    // Fullscreen toggle (F11)
+    document.getElementById('btn-fullscreen-toggle')?.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          showToast('Fullscreen error: ' + err.message);
+        });
+      } else {
+        document.exitFullscreen();
+      }
     });
 
     document.getElementById('btn-copy-cdp')?.addEventListener('click', () => {
