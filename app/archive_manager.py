@@ -24,6 +24,22 @@ _EXCLUDE_DIRS = {
     "ZxcvbnData",
     "Crashpad",
     "Crash Reports",
+    "AutofillStates",
+    "CertificateRevocation",
+    "Crowd Deny",
+    "FileTypePolicies",
+    "FirstPartySetsPreloaded",
+    "MEIPreload",
+    "OptimizationHints",
+    "PKIMetadata",
+    "PrivacySandboxAttestationsPreloaded",
+    "SSLErrorAssistant",
+    "SafetyTips",
+    "Subresource Filter",
+    "TpcdMetadata",
+    "TrustTokenKeyCommitments",
+    "Safe Browsing",
+    "Service Worker",
 }
 _EXCLUDE_FILES = {"SingletonLock", "SingletonCookie", "SingletonSocket", "Lock", "LOCK"}
 
@@ -54,7 +70,11 @@ def export_profile_zip(profile_name: str) -> Path:
         for root, dirs, files in os.walk(p_dir):
             dirs[:] = [d for d in dirs if d not in _EXCLUDE_DIRS]
             for fname in files:
-                if fname in _EXCLUDE_FILES:
+                if (
+                    fname in _EXCLUDE_FILES
+                    or fname.endswith(".pma")
+                    or fname.startswith("BrowserMetrics")
+                ):
                     continue
                 fpath = os.path.join(root, fname)
                 if os.path.islink(fpath):

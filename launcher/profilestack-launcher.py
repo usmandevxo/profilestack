@@ -36,7 +36,38 @@ BASE_LOCAL_DIR = Path.home() / "ProfileStack"
 CONFIG_DIR = BASE_LOCAL_DIR / "config"
 PROFILES_LOCAL_DIR = BASE_LOCAL_DIR / "profiles"
 
-_EXCLUDE_DIRS = {"Cache", "Code Cache", "GPUCache", "ShaderCache", "GrShaderCache", "Crashpad"}
+_EXCLUDE_DIRS = {
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "ShaderCache",
+    "GrShaderCache",
+    "GraphiteDawnCache",
+    "DawnWebGPUCache",
+    "DawnGraphiteCache",
+    "component_crx_cache",
+    "OnDeviceHeadSuggestModel",
+    "hyphen-data",
+    "ZxcvbnData",
+    "Crashpad",
+    "Crash Reports",
+    "AutofillStates",
+    "CertificateRevocation",
+    "Crowd Deny",
+    "FileTypePolicies",
+    "FirstPartySetsPreloaded",
+    "MEIPreload",
+    "OptimizationHints",
+    "PKIMetadata",
+    "PrivacySandboxAttestationsPreloaded",
+    "SSLErrorAssistant",
+    "SafetyTips",
+    "Subresource Filter",
+    "TpcdMetadata",
+    "TrustTokenKeyCommitments",
+    "Safe Browsing",
+    "Service Worker",
+}
 _EXCLUDE_FILES = {"SingletonLock", "SingletonCookie", "SingletonSocket", "Lock", "LOCK"}
 
 COMMON_BROWSER_BINS = [
@@ -264,7 +295,7 @@ class ProfileClient:
 
         req = urllib.request.Request(url, data=data, headers=h, method=method)
         try:
-            return urllib.request.urlopen(req, timeout=30)
+            return urllib.request.urlopen(req, timeout=90)
         except urllib.error.HTTPError as err:
             if err.code in (401, 403) and self.login():
                 if self.token:
@@ -272,7 +303,7 @@ class ProfileClient:
                     h["Cookie"] = f"ps_session={self.token}; profilestack_session={self.token}"
                     h["Authorization"] = f"Bearer {self.token}"
                 req2 = urllib.request.Request(url, data=data, headers=h, method=method)
-                return urllib.request.urlopen(req2, timeout=30)
+                return urllib.request.urlopen(req2, timeout=90)
             raise
 
     def get_profile_info(self, name: str) -> dict:
