@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import struct
 import subprocess
@@ -24,10 +25,16 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+try:
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+except Exception:
+    pass
+
 DEFAULT_SERVER = "https://profilestack.apanel.eu.cc"
 DEFAULT_PORT = 7890
-CONFIG_DIR = Path.home() / ".config" / "profilestack"
-PROFILES_LOCAL_DIR = CONFIG_DIR / "profiles"
+BASE_LOCAL_DIR = Path.home() / "ProfileStack"
+CONFIG_DIR = BASE_LOCAL_DIR / "config"
+PROFILES_LOCAL_DIR = BASE_LOCAL_DIR / "profiles"
 
 _EXCLUDE_DIRS = {"Cache", "Code Cache", "GPUCache", "ShaderCache", "GrShaderCache", "Crashpad"}
 _EXCLUDE_FILES = {"SingletonLock", "SingletonCookie", "SingletonSocket", "Lock", "LOCK"}
@@ -412,6 +419,7 @@ def launch_profile(profile_name: str, server_url: str = DEFAULT_SERVER, token: s
         "--no-default-browser-check",
         "--disable-features=LockProfileCookieDatabase",
         "--restore-last-session",
+        "--ozone-platform-hint=auto",
     ]
 
     m = p_info.get("machine", {})
@@ -438,24 +446,24 @@ def launch_profile(profile_name: str, server_url: str = DEFAULT_SERVER, token: s
     start_url = p_info.get("start_url") or "https://www.google.com"
     flags.append(start_url)
 
+    chrome_log = CONFIG_DIR / "chromium.log"
     log(f"[*] Executing browser: {' '.join(flags)}")
 
     proc = None
     try:
-        proc = subprocess.Popen(
-            flags,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        with open(chrome_log, "a") as f_log:
+            proc = subprocess.Popen(
+                flags,
+                stdout=f_log,
+                stderr=subprocess.STDOUT,
+            )
+
         # Check for immediate crash within 1.5s
         time.sleep(1.5)
         ret = proc.poll()
         if ret is not None:
-            _, err_msg = proc.communicate()
-            err_detail = err_msg.strip() if err_msg else f"exit code {ret}"
-            log(f"[!] Browser terminated immediately! Detail: {err_detail}")
-            notify("ProfileStack Error", f"Browser crashed on start: {err_detail[:60]}")
+            log(f"[!] Browser terminated immediately! Exit code: {ret}. See {chrome_log}")
+            notify("ProfileStack Error", f"Browser exited immediately (code {ret}). See chromium.log")
             return
 
         log(f"[+] Real native browser window running (PID {proc.pid})")

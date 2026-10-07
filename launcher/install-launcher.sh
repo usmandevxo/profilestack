@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-set -e
 
 SERVER_URL="https://profilestack.apanel.eu.cc"
 BIN_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
-CONF_DIR="$HOME/.config/profilestack"
+CONF_DIR="$HOME/ProfileStack/config"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 
 echo "=========================================================="
@@ -17,12 +16,12 @@ if ! command -v python3 &>/dev/null; then
     exit 1
 fi
 
-mkdir -p "$BIN_DIR" "$APP_DIR" "$CONF_DIR" "$SYSTEMD_USER_DIR"
+mkdir -p "$BIN_DIR" "$APP_DIR" "$CONF_DIR" "$HOME/ProfileStack/profiles" "$SYSTEMD_USER_DIR"
 
 LAUNCHER_SCRIPT="$BIN_DIR/profilestack-launcher"
 
 echo "[*] Downloading latest profilestack-launcher..."
-curl -fsSL "$SERVER_URL/launcher/profilestack-launcher.py" -o "$LAUNCHER_SCRIPT"
+curl -fsSL -A "Mozilla/5.0 ProfileStack/1.0" "$SERVER_URL/launcher/profilestack-launcher.py" -o "$LAUNCHER_SCRIPT"
 chmod +x "$LAUNCHER_SCRIPT"
 
 # 1. Register Desktop Protocol Handler (profilestack://)

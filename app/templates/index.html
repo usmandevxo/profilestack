@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png?v=20261003_dir2">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=20261003_dir2">
   <link rel="shortcut icon" href="/favicon.ico?v=20261003_dir2">
-  <link rel="stylesheet" href="/static/css/style.css?v=20261007_v3_hotfix">
+  <link rel="stylesheet" href="/static/css/style.css?v=20261007_v4_pipesafe">
 </head>
 <body>
   <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
@@ -605,7 +605,7 @@
           </div>
           <p style="font-size: 12.5px; color: var(--text-muted); margin: 0 0 10px;">Run this command once in your terminal to install the launcher and register the system protocol:</p>
           <div style="position: relative;">
-            <pre style="background: #0f172a; color: #38bdf8; padding: 12px 14px; border-radius: 6px; font-size: 12px; font-family: var(--font-mono); overflow-x: auto; margin: 0;"><code id="code-install-launcher">curl -sSL https://profilestack.apanel.eu.cc/install-launcher.sh | bash</code></pre>
+            <pre style="background: #0f172a; color: #38bdf8; padding: 12px 14px; border-radius: 6px; font-size: 12px; font-family: var(--font-mono); overflow-x: auto; margin: 0;"><code id="code-install-launcher">curl -sSL https://profilestack.apanel.eu.cc/install-launcher.sh -o install.sh && bash install.sh && rm install.sh</code></pre>
             <button class="btn btn-primary btn-sm" onclick="copyCodeSnippet('code-install-launcher')" style="position: absolute; right: 8px; top: 8px; font-size: 11px; padding: 4px 10px;">
               Copy
             </button>
@@ -618,7 +618,7 @@
           </div>
           <p style="font-size: 12.5px; color: var(--text-muted); margin: 0 0 10px;">You can also launch any profile directly from your command line at any time:</p>
           <div style="position: relative;">
-            <pre style="background: #0f172a; color: #38bdf8; padding: 12px 14px; border-radius: 6px; font-size: 12px; font-family: var(--font-mono); overflow-x: auto; margin: 0;"><code id="code-cli-launcher">profilestack-launcher Gs1</code></pre>
+            <pre style="background: #0f172a; color: #38bdf8; padding: 12px 14px; border-radius: 6px; font-size: 12px; font-family: var(--font-mono); overflow-x: auto; margin: 0;"><code id="code-cli-launcher">profilestack-launcher launch Gs1</code></pre>
             <button class="btn btn-primary btn-sm" onclick="copyCodeSnippet('code-cli-launcher')" style="position: absolute; right: 8px; top: 8px; font-size: 11px; padding: 4px 10px;">
               Copy
             </button>
@@ -787,6 +787,6 @@ async with stdio_client(params) as (read, write):
   <!-- Toast Container -->
   <div id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20261007_v3_hotfix"></script>
+  <script src="/static/js/app.js?v=20261007_v4_pipesafe"></script>
 </body>
 </html>
