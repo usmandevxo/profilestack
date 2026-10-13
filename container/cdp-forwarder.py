@@ -34,6 +34,9 @@ def handle_client(client):
             pass
         return
 
+    upstream.settimeout(None)
+    client.settimeout(None)
+
     try:
         t1 = threading.Thread(target=forward, args=(client, upstream), daemon=True)
         t2 = threading.Thread(target=forward, args=(upstream, client), daemon=True)
