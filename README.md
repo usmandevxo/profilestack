@@ -89,7 +89,7 @@ docker build -t profilestack-chrome:latest container/
 ### Running the Server
 
 ```bash
-uvicorn app.server:app --host 127.0.0.1 --port 7800 --workers 2
+uvicorn app.server:app --host 127.0.0.1 --port 7800 --workers 1   # single worker required: MCP sessions are in-process
 ```
 
 ### Default Credentials

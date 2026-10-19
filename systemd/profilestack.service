@@ -10,7 +10,10 @@ Group=www
 WorkingDirectory=/www/wwwroot/profilestack
 Environment="PYTHONPATH="
 Environment="PATH=/www/wwwroot/profilestack/.venv/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=/www/wwwroot/profilestack/.venv/bin/uvicorn app.server:app --host 127.0.0.1 --port 7800 --workers 2
+# NOTE: must stay --workers 1 - MCP SSE sessions are stored in-process, so with
+# >1 uvicorn worker the SSE GET lands on one worker while message POSTs get
+# routed to the other (session not found: intermittent 404s/timeouts on all MCP clients).
+ExecStart=/www/wwwroot/profilestack/.venv/bin/uvicorn app.server:app --host 127.0.0.1 --port 7800 --workers 1
 Restart=always
 RestartSec=3
 
