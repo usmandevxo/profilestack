@@ -2378,6 +2378,20 @@ Examples:
     local_dir = PROFILES_LOCAL_DIR / profile_name
     local_dir.mkdir(parents=True, exist_ok=True)
 
+    # Check for saved cloud auth and sync profile if needed
+    if CLIENT_INSTANCE.token or AUTH_FILE.is_file():
+        CLIENT_INSTANCE._load_stored_auth()
+    if CLIENT_INSTANCE.token:
+        try:
+            has_cookies = (local_dir / "Default" / "Network" / "Cookies").is_file() or (local_dir / "Default" / "Cookies").is_file()
+            cfg_file = local_dir / "config.json"
+            if not has_cookies or not cfg_file.is_file():
+                print(f"[*] Fetching profile '{profile_name}' configuration and session from cloud ({CLIENT_INSTANCE.server_url})...")
+                CLIENT_INSTANCE.download_profile(profile_name, local_dir)
+                print(f"[+] Synced profile '{profile_name}' state.")
+        except Exception as e:
+            print(f"[*] Note: Running with local profile state ({e})")
+
     # Clean stale locks
     for p in [local_dir, local_dir / "Default", local_dir / "Profile 1", local_dir / "Profile 2"]:
         if p.is_dir():
@@ -2526,6 +2540,13 @@ Examples:
     finally:
         if proxy_wrapper:
             proxy_wrapper.stop()
+        if CLIENT_INSTANCE.token and (local_dir / "Default").is_dir():
+            try:
+                print(f"[*] Uploading updated session state for '{profile_name}' to cloud ({CLIENT_INSTANCE.server_url})...")
+                res = CLIENT_INSTANCE.upload_profile(profile_name, local_dir)
+                print(f"[+] Profile '{profile_name}' session saved to cloud.")
+            except Exception as e:
+                print(f"[*] Note: Could not sync session back to cloud: {e}")
 
     return 0
 
