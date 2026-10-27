@@ -113,7 +113,7 @@ elif [ -f "/www/wwwroot/profilestack/launcher/profilestack-desktop.py" ] && comm
     exec python3 "/www/wwwroot/profilestack/launcher/profilestack-desktop.py" --browser "\$@"
 fi
 
-# 3. Fallback: locate engine and run strictly with isolated Default profile (NEVER personal Chrome profile)
+# 3. Fallback: locate engine and run strictly with isolated profile (NEVER personal Chrome profile)
 ENGINE="$CHROME_BIN"
 if [ -z "\$ENGINE" ] || [ ! -x "\$ENGINE" ]; then
     for b in chromium ungoogled-chromium chromium-browser brave-bin brave google-chrome-stable google-chrome; do
@@ -133,24 +133,79 @@ if [ -z "\$ENGINE" ]; then
     exit 1
 fi
 
-PROFILE_DIR="\$HOME/ProfileStack/profiles/Default"
+PROFILE="Default"
+URLS=()
+while [[ \$# -gt 0 ]]; do
+    case "\$1" in
+        -p|--profile)
+            PROFILE="\$2"
+            shift 2
+            ;;
+        --profile=*)
+            PROFILE="\${1#*=}"
+            shift
+            ;;
+        -l|--list)
+            echo "======================================================="
+            echo "         Local ProfileStack Profiles"
+            echo "======================================================="
+            if [ -d "\$HOME/ProfileStack/profiles" ]; then
+                for d in "\$HOME/ProfileStack/profiles"/*; do
+                    if [ -d "\$d" ]; then
+                        echo "  * \$(basename "\$d")"
+                    fi
+                done
+            fi
+            echo "======================================================="
+            exit 0
+            ;;
+        -h|--help)
+            echo "ProfileStack Browser - Isolated Anti-Detect Browser Engine"
+            echo ""
+            echo "Usage:"
+            echo "  profilestack-browser [options] [URL]"
+            echo "  profilestack-browser -p <profile_name> [URL]"
+            echo ""
+            echo "Options:"
+            echo "  -p, --profile <name>   Launch a specific ProfileStack profile (default: 'Default')"
+            echo "  -l, --list             List all local ProfileStack profiles"
+            echo "  --desktop, --gui       Launch the ProfileStack Desktop manager interface"
+            echo "  -h, --help             Show this help message"
+            exit 0
+            ;;
+        *)
+            URLS+=("\$1")
+            shift
+            ;;
+    esac
+done
+
+PROFILE_DIR="\$HOME/ProfileStack/profiles/\$PROFILE"
 mkdir -p "\$PROFILE_DIR"
 export CHROME_DESKTOP="profilestack-browser.desktop"
-exec "\$ENGINE" \\
-    --user-data-dir="\$PROFILE_DIR" \\
-    --class=ProfileStackBrowser \\
-    --app-id=profilestack_Default \\
-    --password-store=basic \\
-    --no-first-run \\
-    --no-default-browser-check \\
-    --disable-sync \\
-    --disable-signin-scoped-device-id \\
-    --disable-features=AccountConsistency,DesktopIdentityConsistency,LockProfileCookieDatabase \\
-    --disable-blink-features=AutomationControlled \\
-    --disable-session-crashed-bubble \\
-    --restore-last-session \\
-    --ozone-platform-hint=auto \\
-    "\$@"
+
+ARGS=(
+    --user-data-dir="\$PROFILE_DIR"
+    --class=ProfileStackBrowser
+    --log-level=3
+    --silent-debugger-extension-api
+    --password-store=basic
+    --no-first-run
+    --no-default-browser-check
+    --disable-sync
+    --disable-signin-scoped-device-id
+    --disable-features=AccountConsistency,DesktopIdentityConsistency,LockProfileCookieDatabase
+    --disable-blink-features=AutomationControlled
+    --disable-session-crashed-bubble
+    --restore-last-session
+    --ozone-platform-hint=auto
+)
+
+if [ \${#URLS[@]} -eq 0 ]; then
+    exec "\$ENGINE" "\${ARGS[@]}" "https://www.google.com"
+else
+    exec "\$ENGINE" "\${ARGS[@]}" "\${URLS[@]}"
+fi
 EOF
 chmod +x "$BROWSER_SCRIPT"
 
