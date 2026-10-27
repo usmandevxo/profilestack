@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ProfileStack Desktop Installer for Linux (CachyOS, Arch, Ubuntu, Debian, Fedora)
 set -e
 
 SERVER_URL="https://profilestack.apanel.eu.cc"
@@ -7,31 +8,53 @@ APP_DIR="$HOME/.local/share/applications"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 CONF_DIR="$HOME/ProfileStack/config"
 PROFILES_DIR="$HOME/ProfileStack/profiles"
+ARCH="$(uname -m)"
 
 echo "=========================================================="
-echo "    ProfileStack Desktop Application Installer (Native)   "
+echo "    ProfileStack Desktop Linux Installer (Native Chrome)  "
+echo "    Host Architecture: $ARCH                              "
 echo "=========================================================="
 echo ""
-
-if ! command -v python3 &>/dev/null; then
-    echo "[!] Error: Python 3 is required. Please install python3 first."
-    exit 1
-fi
 
 mkdir -p "$BIN_DIR" "$APP_DIR" "$ICON_DIR" "$CONF_DIR" "$PROFILES_DIR"
 
 DESKTOP_SCRIPT="$BIN_DIR/profilestack-desktop"
 
-echo "[*] Downloading ProfileStack Desktop client binary..."
-curl -fsSL -A "Mozilla/5.0 ProfileStack/1.0" "$SERVER_URL/launcher/profilestack-desktop.py" -o "$DESKTOP_SCRIPT"
-chmod +x "$DESKTOP_SCRIPT"
+# Check if pre-compiled binary is requested or available for this architecture
+INSTALL_MODE="script"
+for arg in "$@"; do
+    if [ "$arg" == "--binary" ]; then
+        INSTALL_MODE="binary"
+    fi
+done
+
+if [ "$INSTALL_MODE" == "binary" ]; then
+    echo "[*] Downloading pre-compiled standalone Linux ELF binary ($ARCH)..."
+    if curl -fsSL -A "Mozilla/5.0 ProfileStack/1.0" "$SERVER_URL/launcher/dist/profilestack-desktop-linux-$ARCH" -o "$DESKTOP_SCRIPT" 2>/dev/null; then
+        chmod +x "$DESKTOP_SCRIPT"
+        echo "[+] Standalone binary installed to $DESKTOP_SCRIPT"
+    else
+        echo "[!] Pre-compiled binary for $ARCH not found on server, installing native Python client instead..."
+        INSTALL_MODE="script"
+    fi
+fi
+
+if [ "$INSTALL_MODE" == "script" ]; then
+    if ! command -v python3 &>/dev/null; then
+        echo "[!] Error: Python 3 is required. Please install python3 first."
+        exit 1
+    fi
+    echo "[*] Downloading ProfileStack Desktop client for Linux..."
+    curl -fsSL -A "Mozilla/5.0 ProfileStack/1.0" "$SERVER_URL/launcher/profilestack-desktop.py" -o "$DESKTOP_SCRIPT"
+    chmod +x "$DESKTOP_SCRIPT"
+fi
 
 echo "[*] Downloading high-resolution SVG icon..."
 curl -fsSL -A "Mozilla/5.0 ProfileStack/1.0" "$SERVER_URL/static/img/logo.svg" -o "$ICON_DIR/profilestack.svg" || true
 
 # Register Desktop Entry (.desktop)
 DESKTOP_FILE="$APP_DIR/profilestack-desktop.desktop"
-echo "[*] Creating Desktop application entry..."
+echo "[*] Creating Linux desktop menu entry..."
 cat <<EOF > "$DESKTOP_FILE"
 [Desktop Entry]
 Name=ProfileStack Desktop
@@ -46,7 +69,7 @@ MimeType=x-scheme-handler/profilestack;
 EOF
 chmod +x "$DESKTOP_FILE"
 
-# Register protocol and update databases
+# Register protocol and update system desktop databases
 if command -v update-desktop-database &>/dev/null; then
     update-desktop-database "$APP_DIR" 2>/dev/null || true
 fi
@@ -62,7 +85,7 @@ HAS_CHROME=0
 for b in chromium google-chrome-stable google-chrome brave-bin brave microsoft-edge-stable vivaldi ungoogled-chromium; do
     if command -v "$b" &>/dev/null; then
         HAS_CHROME=1
-        echo "[+] Found native Chromium engine: $(command -v "$b")"
+        echo "[+] Detected native desktop browser engine: $(command -v "$b")"
         break
     fi
 done
@@ -75,6 +98,7 @@ if [ "$HAS_CHROME" -eq 0 ]; then
     echo "    Install it now:"
     echo "      On CachyOS / Arch: sudo pacman -S chromium"
     echo "      On Ubuntu / Debian: sudo apt install chromium-browser"
+    echo "      On Fedora:         sudo dnf install chromium"
     echo "=========================================================="
     echo ""
 fi
@@ -87,7 +111,7 @@ fi
 
 echo ""
 echo "=========================================================="
-echo "[+] SUCCESS: ProfileStack Desktop is installed!"
+echo "[+] SUCCESS: ProfileStack Desktop is installed on Linux!"
 echo "=========================================================="
 echo "Executable:       $DESKTOP_SCRIPT"
 echo "Application Menu: ProfileStack Desktop"

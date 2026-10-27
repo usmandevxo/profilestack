@@ -21,6 +21,9 @@ data/.empty
 *.tmp
 .DS_Store
 Thumbs.db
+launcher/dist/
+build/
+dist/
 
 # System runtime sockets
 *.sock

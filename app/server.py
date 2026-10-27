@@ -579,6 +579,15 @@ async def get_desktop_binary():
     return FileResponse(path=str(bin_path), media_type="text/x-python", filename="profilestack-desktop.py")
 
 
+@app.get("/launcher/dist/{filename}")
+async def get_launcher_dist_file(filename: str):
+    dist_path = (BASE_DIR / "launcher" / "dist" / filename).resolve()
+    base_dist = (BASE_DIR / "launcher" / "dist").resolve()
+    if not str(dist_path).startswith(str(base_dist)) or not dist_path.is_file():
+        raise HTTPException(status_code=404, detail="Binary file not found.")
+    return FileResponse(path=str(dist_path), media_type="application/octet-stream", filename=filename)
+
+
 # ── Global Proxy Store ────────────────────────────────────────────────────────
 @app.get("/api/proxies")
 async def get_proxies():
