@@ -168,6 +168,7 @@ def find_underlying_engine(preferred: str = "") -> str:
             return p
 
     for candidate in [
+        BASE_LOCAL_DIR / "browser" / "google-chrome",
         BASE_LOCAL_DIR / "browser" / "chrome",
         BASE_LOCAL_DIR / "browser" / "chromium",
         BASE_LOCAL_DIR / "browser" / "brave",
@@ -175,33 +176,37 @@ def find_underlying_engine(preferred: str = "") -> str:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
 
+    # Common Linux fixed paths (prioritizing Google Chrome)
+    for p in [
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+        "/opt/google/chrome/google-chrome",
+        "/opt/google/chrome/chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/ungoogled-chromium",
+        "/usr/bin/brave-browser",
+        "/usr/bin/brave",
+    ]:
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+
     for b in [
-        "brave-browser",
-        "brave-bin",
-        "brave",
+        "google-chrome-stable",
+        "google-chrome",
+        "chrome",
         "chromium",
         "ungoogled-chromium",
         "chromium-browser",
-        "google-chrome-stable",
-        "google-chrome",
+        "brave-browser",
+        "brave-bin",
+        "brave",
         "microsoft-edge-stable",
         "microsoft-edge",
         "vivaldi",
     ]:
         p = shutil.which(b)
         if p and "profilestack" not in os.path.basename(p).lower():
-            return p
-
-    # Common Linux fixed paths
-    for p in [
-        "/usr/bin/brave-browser",
-        "/usr/bin/brave",
-        "/usr/bin/chromium",
-        "/usr/bin/ungoogled-chromium",
-        "/usr/bin/google-chrome-stable",
-        "/usr/bin/google-chrome",
-    ]:
-        if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
 
     return ""
@@ -246,7 +251,7 @@ fi
 # 3. Fallback: locate engine and run strictly with isolated profile (NEVER personal Chrome profile)
 ENGINE="{engine_bin}"
 if [ -z "$ENGINE" ] || [ ! -x "$ENGINE" ]; then
-    for b in chromium ungoogled-chromium chromium-browser brave-bin brave google-chrome-stable google-chrome; do
+    for b in google-chrome-stable google-chrome chromium ungoogled-chromium chromium-browser brave-browser brave-bin brave; do
         if command -v "$b" &>/dev/null; then
             p="$(command -v "$b")"
             if [[ "$p" != *profilestack* ]]; then
@@ -259,7 +264,7 @@ fi
 
 if [ -z "$ENGINE" ]; then
     echo "[!] ProfileStack Browser error: No underlying Chromium engine found." >&2
-    echo "    Please install Chromium: sudo pacman -S chromium (or sudo apt install chromium-browser)" >&2
+    echo "    Please install Google Chrome or Chromium: sudo pacman -S google-chrome (or chromium)" >&2
     exit 1
 fi
 
@@ -320,6 +325,7 @@ ARGS=(
     --log-level=3
     --silent-debugger-extension-api
     --password-store=basic
+    --use-mock-keychain
     --no-first-run
     --no-default-browser-check
     --disable-sync
@@ -627,10 +633,35 @@ def inject_profile_preferences(local_dir: Path, machine: dict, profile_name: str
     prof.setdefault("default_content_setting_values", {})["cookies"] = 1
     prof["cookie_controls_mode"] = 0
     prof["block_third_party_cookies"] = False
+    prof["password_manager_enabled"] = True
 
+    # Ensure saved credentials and web logins don't trigger deletion or auto-logout
+    pref_data["credentials_enable_service"] = True
+    pref_data["credentials_enable_autosignin"] = True
+
+    # Disable Chrome-level DICE browser sign-in to prevent token revocation on restart
     signin = pref_data.setdefault("signin", {})
     signin["allowed"] = False
     signin["allowed_on_next_startup"] = False
+
+    # Prevent clearing cookies or browsing data on exit
+    clear_data = pref_data.setdefault("browser", {}).setdefault("clear_data", {})
+    clear_data["cookies"] = False
+    clear_data["cookies_basic"] = False
+    clear_data["cache"] = False
+    clear_data["hosted_apps_data"] = False
+
+    # Disable Sync conflicts
+    sync = pref_data.setdefault("sync", {})
+    sync["has_setup_completed"] = False
+    sync["keep_everything_synced"] = False
+
+    # Prevent Privacy Sandbox popups from interfering
+    ps = pref_data.setdefault("privacy_sandbox", {})
+    ps_m1 = ps.setdefault("m1", {})
+    ps_m1["consent_decision_made"] = True
+    ps_m1["row_notice_acknowledged"] = True
+    ps_m1["topics_enabled"] = False
 
     sess = pref_data.setdefault("session", {})
     sess["restore_on_startup"] = 1
@@ -1090,12 +1121,17 @@ def launch_native_profile(profile_name: str, server_url: str = DEFAULT_SERVER, t
     except Exception:
         pass
 
-    log(f"[*] Synchronizing state from server into {local_dir}...")
-    try:
-        client.download_profile(profile_name, local_dir)
-        log(f"[+] Download complete for '{profile_name}'.")
-    except Exception as e:
-        log(f"[!] Cloud sync warning ({e}), falling back to existing local profile state.")
+    cookies_file = local_dir / "Default" / "Network" / "Cookies"
+    cookies_legacy = local_dir / "Default" / "Cookies"
+    if not cookies_file.is_file() and not cookies_legacy.is_file():
+        log(f"[*] Synchronizing state from server into {local_dir}...")
+        try:
+            client.download_profile(profile_name, local_dir)
+            log(f"[+] Download complete for '{profile_name}'.")
+        except Exception as e:
+            log(f"[!] Cloud sync warning ({e}), falling back to existing local profile state.")
+    else:
+        log(f"[*] Preserving existing local logged-in session for '{profile_name}'.")
 
     # Remove stale locks
     for p in [local_dir, local_dir / "Default", local_dir / "Profile 1", local_dir / "Profile 2"]:
@@ -1138,6 +1174,7 @@ def launch_native_profile(profile_name: str, server_url: str = DEFAULT_SERVER, t
         "--log-level=3",
         "--silent-debugger-extension-api",
         "--password-store=basic",
+        "--use-mock-keychain",
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-sync",
@@ -1190,7 +1227,6 @@ def launch_native_profile(profile_name: str, server_url: str = DEFAULT_SERVER, t
     if lang:
         loc = lang.replace("-", "_") + ".UTF-8"
         proc_env["LANG"] = loc
-        proc_env["LC_ALL"] = loc
     proc_env["CHROME_DESKTOP"] = "profilestack-browser.desktop"
 
     # CPU Core Affinity via taskset
@@ -1240,6 +1276,17 @@ def launch_native_profile(profile_name: str, server_url: str = DEFAULT_SERVER, t
         ACTIVE_MGR.stop(profile_name)
         if proxy_wrapper:
             proxy_wrapper.stop()
+
+    time.sleep(1.2)  # Allow SQLite WAL checkpoint to disk
+    for p in [local_dir, local_dir / "Default", local_dir / "Profile 1", local_dir / "Profile 2"]:
+        if p.is_dir():
+            for item in p.iterdir():
+                name_lower = item.name.lower()
+                if any(k in name_lower for k in ["singleton", "lock"]):
+                    try:
+                        item.unlink(missing_ok=True)
+                    except Exception:
+                        pass
 
     log(f"[*] Uploading updated session state back to server ({server_url})...")
     notify("ProfileStack", f"Syncing {profile_name} session back to cloud...")
@@ -2485,6 +2532,7 @@ Examples:
         "--log-level=3",
         "--silent-debugger-extension-api",
         "--password-store=basic",
+        "--use-mock-keychain",
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-sync",
@@ -2546,7 +2594,6 @@ Examples:
     if lang:
         loc = lang.replace("-", "_") + ".UTF-8"
         proc_env["LANG"] = loc
-        proc_env["LC_ALL"] = loc
     proc_env["CHROME_DESKTOP"] = "profilestack-browser.desktop"
 
     spoof_cores = m.get("cpu_cores", 8)
@@ -2577,6 +2624,16 @@ Examples:
     finally:
         if proxy_wrapper:
             proxy_wrapper.stop()
+        time.sleep(1.2)  # Wait for SQLite WAL flush
+        for p in [local_dir, local_dir / "Default", local_dir / "Profile 1", local_dir / "Profile 2"]:
+            if p.is_dir():
+                for item in p.iterdir():
+                    name_lower = item.name.lower()
+                    if any(k in name_lower for k in ["singleton", "lock"]):
+                        try:
+                            item.unlink(missing_ok=True)
+                        except Exception:
+                            pass
         if CLIENT_INSTANCE.token and (local_dir / "Default").is_dir():
             try:
                 print(f"[*] Uploading updated session state for '{profile_name}' to cloud ({CLIENT_INSTANCE.server_url})...")

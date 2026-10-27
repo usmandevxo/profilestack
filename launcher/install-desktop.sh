@@ -74,22 +74,30 @@ BROWSER_SCRIPT="$BIN_DIR/profilestack-browser"
 BROWSER_DESKTOP_FILE="$APP_DIR/profilestack-browser.desktop"
 echo "[*] Configuring dedicated ProfileStack Browser engine runner..."
 
-# Find underlying chromium binary
+# Find underlying chromium binary (Google Chrome prioritized)
 CHROME_BIN=""
 if [ -n "$PROFILESTACK_BROWSER_BIN" ] && [ -x "$PROFILESTACK_BROWSER_BIN" ]; then
     CHROME_BIN="$PROFILESTACK_BROWSER_BIN"
 elif [ -n "$CHROME_BIN" ] && [ -x "$CHROME_BIN" ]; then
     : # already set
 else
-    for b in brave-browser brave-bin brave chromium ungoogled-chromium chromium-browser google-chrome-stable google-chrome; do
-        if command -v "$b" &>/dev/null; then
-            p="$(command -v "$b")"
-            if [[ "$p" != *profilestack* ]]; then
-                CHROME_BIN="$p"
-                break
-            fi
+    for p in "/usr/bin/google-chrome-stable" "/usr/bin/google-chrome" "/opt/google/chrome/google-chrome" "/opt/google/chrome/chrome" "/usr/bin/chromium" "/usr/bin/chromium-browser"; do
+        if [ -x "$p" ]; then
+            CHROME_BIN="$p"
+            break
         fi
     done
+    if [ -z "$CHROME_BIN" ]; then
+        for b in google-chrome-stable google-chrome chromium ungoogled-chromium chromium-browser brave-browser brave-bin brave; do
+            if command -v "$b" &>/dev/null; then
+                p="$(command -v "$b")"
+                if [[ "$p" != *profilestack* ]]; then
+                    CHROME_BIN="$p"
+                    break
+                fi
+            fi
+        done
+    fi
 fi
 
 cat <<EOF > "$BROWSER_SCRIPT"
@@ -122,20 +130,28 @@ fi
 # 3. Fallback: locate engine and run strictly with isolated profile (NEVER personal Chrome profile)
 ENGINE="$CHROME_BIN"
 if [ -z "\$ENGINE" ] || [ ! -x "\$ENGINE" ]; then
-    for b in chromium ungoogled-chromium chromium-browser brave-bin brave google-chrome-stable google-chrome; do
-        if command -v "\$b" &>/dev/null; then
-            p="\$(command -v "\$b")"
-            if [[ "\$p" != *profilestack* ]]; then
-                ENGINE="\$p"
-                break
-            fi
+    for p in "/usr/bin/google-chrome-stable" "/usr/bin/google-chrome" "/opt/google/chrome/google-chrome" "/opt/google/chrome/chrome" "/usr/bin/chromium" "/usr/bin/chromium-browser"; do
+        if [ -x "\$p" ]; then
+            ENGINE="\$p"
+            break
         fi
     done
+    if [ -z "\$ENGINE" ]; then
+        for b in google-chrome-stable google-chrome chromium ungoogled-chromium chromium-browser brave-browser brave-bin brave; do
+            if command -v "\$b" &>/dev/null; then
+                p="\$(command -v "\$b")"
+                if [[ "\$p" != *profilestack* ]]; then
+                    ENGINE="\$p"
+                    break
+                fi
+            fi
+        done
+    fi
 fi
 
 if [ -z "\$ENGINE" ]; then
     echo "[!] ProfileStack Browser error: No Chromium engine found." >&2
-    echo "    Please install Chromium: sudo pacman -S chromium (or sudo apt install chromium-browser)" >&2
+    echo "    Please install Google Chrome or Chromium: sudo pacman -S google-chrome (or chromium)" >&2
     exit 1
 fi
 
@@ -196,6 +212,7 @@ ARGS=(
     --log-level=3
     --silent-debugger-extension-api
     --password-store=basic
+    --use-mock-keychain
     --no-first-run
     --no-default-browser-check
     --disable-sync
