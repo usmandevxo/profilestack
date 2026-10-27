@@ -52,13 +52,13 @@ fi
 echo "[*] Downloading high-resolution SVG icon..."
 curl -fsSL -A "Mozilla/5.0 ProfileStack/1.0" "$SERVER_URL/static/img/logo.svg" -o "$ICON_DIR/profilestack.svg" || true
 
-# Register Desktop Entry (.desktop)
+# Register Desktop Entry (.desktop) for ProfileStack Client
 DESKTOP_FILE="$APP_DIR/profilestack-desktop.desktop"
-echo "[*] Creating Linux desktop menu entry..."
+echo "[*] Creating Linux desktop menu entry for ProfileStack Desktop..."
 cat <<EOF > "$DESKTOP_FILE"
 [Desktop Entry]
 Name=ProfileStack Desktop
-Comment=ProfileStack Anti-Detect Browser Client - Native Chrome Profiles
+Comment=ProfileStack Anti-Detect Browser Client - Native Profiles
 Exec=$DESKTOP_SCRIPT %u
 Icon=profilestack
 Terminal=false
@@ -68,6 +68,61 @@ StartupWMClass=ProfileStackDesktop
 MimeType=x-scheme-handler/profilestack;
 EOF
 chmod +x "$DESKTOP_FILE"
+
+# Setup Dedicated ProfileStack Browser Runner
+BROWSER_SCRIPT="$BIN_DIR/profilestack-browser"
+BROWSER_DESKTOP_FILE="$APP_DIR/profilestack-browser.desktop"
+echo "[*] Configuring dedicated ProfileStack Browser engine runner..."
+
+# Find underlying chromium binary
+CHROME_BIN=""
+for b in chromium ungoogled-chromium chromium-browser brave-bin brave google-chrome-stable google-chrome; do
+    if command -v "$b" &>/dev/null; then
+        p="$(command -v "$b")"
+        if [[ "$p" != *profilestack-browser* ]]; then
+            CHROME_BIN="$p"
+            break
+        fi
+    fi
+done
+
+cat <<EOF > "$BROWSER_SCRIPT"
+#!/usr/bin/env bash
+# ProfileStack Browser - Dedicated Anti-Detect Browser Engine Runner
+ENGINE="$CHROME_BIN"
+if [ -z "\$ENGINE" ] || [ ! -x "\$ENGINE" ]; then
+    for b in chromium ungoogled-chromium chromium-browser brave-bin brave google-chrome-stable google-chrome; do
+        if command -v "\$b" &>/dev/null; then
+            p="\$(command -v "\$b")"
+            if [[ "\$p" != *profilestack-browser* ]]; then
+                ENGINE="\$p"
+                break
+            fi
+        fi
+    done
+fi
+if [ -z "\$ENGINE" ]; then
+    echo "[!] ProfileStack Browser error: No Chromium engine found." >&2
+    echo "    Please install Chromium: sudo pacman -S chromium (or sudo apt install chromium-browser)" >&2
+    exit 1
+fi
+export CHROME_DESKTOP="profilestack-browser.desktop"
+exec "\$ENGINE" --class=ProfileStackBrowser --app-id=profilestack "\$@"
+EOF
+chmod +x "$BROWSER_SCRIPT"
+
+cat <<EOF > "$BROWSER_DESKTOP_FILE"
+[Desktop Entry]
+Name=ProfileStack Browser
+Comment=ProfileStack Anti-Detect Browser Engine
+Exec=$BROWSER_SCRIPT %u
+Icon=profilestack
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;
+StartupWMClass=ProfileStackBrowser
+EOF
+chmod +x "$BROWSER_DESKTOP_FILE"
 
 # Register protocol and update system desktop databases
 if command -v update-desktop-database &>/dev/null; then

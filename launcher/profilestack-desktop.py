@@ -25,15 +25,23 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+import hashlib
+import hmac
+import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+try:
+    import zoneinfo
+except ImportError:
+    zoneinfo = None
 
 try:
     signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 except Exception:
     pass
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 DEFAULT_SERVER = "https://profilestack.apanel.eu.cc"
 DEFAULT_PORT = 7898
 
@@ -79,15 +87,17 @@ _EXCLUDE_DIRS = {
 _EXCLUDE_FILES = {"SingletonLock", "SingletonCookie", "SingletonSocket", "Lock", "LOCK"}
 
 COMMON_BROWSER_BINS = [
+    "profilestack-browser",
     "chromium",
-    "google-chrome-stable",
-    "google-chrome",
+    "ungoogled-chromium",
+    "chromium-browser",
     "brave-bin",
     "brave",
     "microsoft-edge-stable",
     "microsoft-edge",
     "vivaldi",
-    "ungoogled-chromium",
+    "google-chrome-stable",
+    "google-chrome",
 ]
 
 
@@ -117,13 +127,377 @@ def notify(title: str, msg: str):
             pass
 
 
+def setup_profilestack_browser() -> str:
+    """Sets up a dedicated ~/.local/bin/profilestack-browser runner and .desktop entry."""
+    bin_dir = Path.home() / ".local" / "bin"
+    app_dir = Path.home() / ".local" / "share" / "applications"
+    icon_dir = Path.home() / ".local" / "share" / "icons" / "hicolor" / "scalable" / "apps"
+    try:
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        app_dir.mkdir(parents=True, exist_ok=True)
+        icon_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+    # Copy / symlink icon if available
+    local_icon = icon_dir / "profilestack.svg"
+    if not local_icon.is_file():
+        for candidate_icon in [
+            BASE_LOCAL_DIR / "logo.svg",
+            Path("/www/wwwroot/profilestack/app/static/img/logo.svg"),
+        ]:
+            if candidate_icon.is_file():
+                try:
+                    shutil.copy2(candidate_icon, local_icon)
+                except Exception:
+                    pass
+                break
+
+    # Locate underlying Chromium-compatible engine (avoiding recursive loop)
+    engine_bin = ""
+    for candidate in [
+        BASE_LOCAL_DIR / "browser" / "chrome",
+        BASE_LOCAL_DIR / "browser" / "chromium",
+    ]:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            engine_bin = str(candidate)
+            break
+
+    if not engine_bin:
+        for b in [
+            "chromium",
+            "ungoogled-chromium",
+            "chromium-browser",
+            "brave-bin",
+            "brave",
+            "microsoft-edge-stable",
+            "microsoft-edge",
+            "vivaldi",
+            "google-chrome-stable",
+            "google-chrome",
+        ]:
+            p = shutil.which(b)
+            if p and not p.endswith("profilestack-browser"):
+                engine_bin = p
+                break
+
+    runner_path = bin_dir / "profilestack-browser"
+    runner_script = f"""#!/usr/bin/env bash
+# ProfileStack Browser - Dedicated Anti-Detect Browser Engine
+ENGINE="{engine_bin}"
+if [ -z "$ENGINE" ] || [ ! -x "$ENGINE" ]; then
+    for b in chromium ungoogled-chromium chromium-browser brave-bin brave google-chrome-stable google-chrome; do
+        if command -v "$b" &>/dev/null; then
+            p="$(command -v "$b")"
+            if [[ "$p" != *profilestack-browser* ]]; then
+                ENGINE="$p"
+                break
+            fi
+        fi
+    done
+fi
+if [ -z "$ENGINE" ]; then
+    echo "[!] ProfileStack Browser error: No underlying Chromium engine found." >&2
+    echo "    Please install Chromium: sudo pacman -S chromium (or sudo apt install chromium-browser)" >&2
+    exit 1
+fi
+export CHROME_DESKTOP="profilestack-browser.desktop"
+exec "$ENGINE" --class=ProfileStackBrowser --app-id=profilestack "$@"
+"""
+    try:
+        runner_path.write_text(runner_script, encoding="utf-8")
+        runner_path.chmod(0o755)
+    except Exception:
+        pass
+
+    desktop_file = app_dir / "profilestack-browser.desktop"
+    desktop_entry = f"""[Desktop Entry]
+Name=ProfileStack Browser
+Comment=ProfileStack Anti-Detect Browser Engine
+Exec={runner_path} %u
+Icon=profilestack
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;
+StartupWMClass=ProfileStackBrowser
+"""
+    try:
+        desktop_file.write_text(desktop_entry, encoding="utf-8")
+        desktop_file.chmod(0o755)
+    except Exception:
+        pass
+
+    return str(runner_path) if runner_path.is_file() else engine_bin
+
+
 def find_browser_binary() -> str:
-    """Finds an installed Chromium-based browser on the host system."""
+    """Finds the ProfileStack Browser runner or installed Chromium-based engine."""
+    try:
+        runner = setup_profilestack_browser()
+        if runner and os.path.isfile(runner) and os.access(runner, os.X_OK):
+            return runner
+    except Exception:
+        pass
+    bin_runner = Path.home() / ".local" / "bin" / "profilestack-browser"
+    if bin_runner.is_file() and os.access(bin_runner, os.X_OK):
+        return str(bin_runner)
     for b in COMMON_BROWSER_BINS:
         p = shutil.which(b)
-        if p:
+        if p and not p.endswith("profilestack-browser"):
             return p
     return ""
+
+
+def generate_antidetect_extension(profile_name: str, machine: dict, local_dir: Path) -> Path:
+    """Generates an unpacked Chrome extension (Manifest V3) that injects hardware & fingerprint spoofing into MAIN world."""
+    ext_dir = local_dir / "_profilestack_ext"
+    ext_dir.mkdir(parents=True, exist_ok=True)
+
+    cpu_cores = machine.get("cpu_cores", 8)
+    res_str = machine.get("screen_resolution", "1920x1080")
+    try:
+        sw, sh = [int(x) for x in res_str.lower().split("x")]
+    except Exception:
+        sw, sh = 1920, 1080
+
+    tz = machine.get("timezone", "UTC")
+    lang = machine.get("language", "en-US")
+    gpu_mode = machine.get("gpu_mode", "swiftshader")
+
+    # Calculate timezone offset in minutes
+    tz_offset = 0
+    if zoneinfo is not None:
+        try:
+            from datetime import datetime
+            now = datetime.now(zoneinfo.ZoneInfo(tz))
+            offset = now.utcoffset()
+            tz_offset = int(-offset.total_seconds() / 60) if offset is not None else 0
+        except Exception:
+            tz_offset = 0
+
+    if gpu_mode == "swiftshader":
+        gpu_vendor = "Google Inc. (Google)"
+        gpu_renderer = "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    else:
+        gpu_vendor = "Google Inc. (NVIDIA)"
+        gpu_renderer = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3070 Direct3D11 vs_5_0 ps_5_0, D3D11)"
+
+    seed_num = int(hashlib.md5(f"profilestack_{profile_name}".encode()).hexdigest()[:8], 16)
+
+    manifest = {
+        "manifest_version": 3,
+        "name": f"ProfileStack Anti-Detect Engine ({profile_name})",
+        "version": "1.0.0",
+        "description": "Hardware and fingerprint spoofing engine for ProfileStack",
+        "content_scripts": [
+            {
+                "matches": ["<all_urls>"],
+                "js": ["inject.js"],
+                "run_at": "document_start",
+                "world": "MAIN",
+                "all_frames": True,
+                "match_about_blank": True,
+            }
+        ],
+    }
+
+    (ext_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    inject_js = f"""// ProfileStack Hardware & Fingerprint Anti-Detect Engine
+(function() {{
+  'use strict';
+  const CONFIG = {{
+    profile: {json.dumps(profile_name)},
+    cores: {cpu_cores},
+    width: {sw},
+    height: {sh},
+    timezone: {json.dumps(tz)},
+    tz_offset: {tz_offset},
+    lang: {json.dumps(lang)},
+    languages: [{json.dumps(lang)}, "en-US", "en"],
+    gpu_vendor: {json.dumps(gpu_vendor)},
+    gpu_renderer: {json.dumps(gpu_renderer)},
+    seed: {seed_num}
+  }};
+
+  // 1. Remove automation indicators
+  try {{
+    delete Object.getPrototypeOf(navigator).webdriver;
+    Object.defineProperty(navigator, 'webdriver', {{ get: () => undefined, configurable: true }});
+  }} catch(e) {{}}
+
+  // 2. Hardware Concurrency (CPU Cores)
+  try {{
+    Object.defineProperty(navigator, 'hardwareConcurrency', {{
+      get: () => CONFIG.cores,
+      configurable: true
+    }});
+  }} catch(e) {{}}
+
+  // 3. Device Memory
+  try {{
+    Object.defineProperty(navigator, 'deviceMemory', {{
+      get: () => 8,
+      configurable: true
+    }});
+  }} catch(e) {{}}
+
+  // 4. Languages
+  try {{
+    Object.defineProperty(navigator, 'language', {{ get: () => CONFIG.lang, configurable: true }});
+    Object.defineProperty(navigator, 'languages', {{ get: () => Object.freeze(CONFIG.languages), configurable: true }});
+  }} catch(e) {{}}
+
+  // 5. Screen Resolution
+  try {{
+    Object.defineProperty(window.screen, 'width', {{ get: () => CONFIG.width, configurable: true }});
+    Object.defineProperty(window.screen, 'height', {{ get: () => CONFIG.height, configurable: true }});
+    Object.defineProperty(window.screen, 'availWidth', {{ get: () => CONFIG.width, configurable: true }});
+    Object.defineProperty(window.screen, 'availHeight', {{ get: () => CONFIG.height - 40, configurable: true }});
+  }} catch(e) {{}}
+
+  // 6. Timezone Spoofing in JS
+  try {{
+    const origDTF = Intl.DateTimeFormat;
+    const origResolved = origDTF.prototype.resolvedOptions;
+    origDTF.prototype.resolvedOptions = function() {{
+      const res = origResolved.apply(this, arguments);
+      res.timeZone = CONFIG.timezone;
+      return res;
+    }};
+    Date.prototype.getTimezoneOffset = function() {{
+      return CONFIG.tz_offset;
+    }};
+  }} catch(e) {{}}
+
+  // 7. WebGL Vendor & Renderer Spoofing
+  try {{
+    const UNMASKED_VENDOR_WEBGL = 0x9245;
+    const UNMASKED_RENDERER_WEBGL = 0x9246;
+
+    const patchWebGL = (proto) => {{
+      if (!proto) return;
+      const origGetParam = proto.getParameter;
+      proto.getParameter = function(param) {{
+        if (param === UNMASKED_VENDOR_WEBGL) return CONFIG.gpu_vendor;
+        if (param === UNMASKED_RENDERER_WEBGL) return CONFIG.gpu_renderer;
+        return origGetParam.apply(this, arguments);
+      }};
+    }};
+    if (typeof WebGLRenderingContext !== 'undefined') patchWebGL(WebGLRenderingContext.prototype);
+    if (typeof WebGL2RenderingContext !== 'undefined') patchWebGL(WebGL2RenderingContext.prototype);
+  }} catch(e) {{}}
+
+  // 8. Canvas Fingerprint Protection (Deterministic noise per profile)
+  try {{
+    const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function() {{
+      try {{
+        const ctx = this.getContext('2d');
+        if (ctx && this.width > 2 && this.height > 2) {{
+          const shift = (CONFIG.seed % 3) - 1;
+          const img = ctx.getImageData(0, 0, 1, 1);
+          img.data[0] = Math.max(0, Math.min(255, img.data[0] + shift));
+          ctx.putImageData(img, 0, 0);
+        }}
+      }} catch(e) {{}}
+      return origToDataURL.apply(this, arguments);
+    }};
+  }} catch(e) {{}}
+
+  // 9. AudioContext Fingerprint Protection
+  try {{
+    if (typeof AudioBuffer !== 'undefined') {{
+      const origGetChannelData = AudioBuffer.prototype.getChannelData;
+      AudioBuffer.prototype.getChannelData = function(c) {{
+        const arr = origGetChannelData.apply(this, arguments);
+        if (arr && arr.length > 5) {{
+          const noise = ((CONFIG.seed % 100) / 100000000);
+          arr[4] += noise;
+        }}
+        return arr;
+      }};
+    }}
+  }} catch(e) {{}}
+}})();
+"""
+    (ext_dir / "inject.js").write_text(inject_js, encoding="utf-8")
+    return ext_dir
+
+
+def inject_profile_local_state(profile_name: str, local_dir: Path) -> str:
+    """Injects deterministic DPAPI/AES encryption key into Local State for persistent cookie decryption."""
+    machine_id_file = local_dir / "machine-id"
+    if machine_id_file.is_file():
+        try:
+            stable_id = machine_id_file.read_text(encoding="utf-8").strip()
+        except Exception:
+            stable_id = hashlib.md5(f"profilestack_{profile_name}".encode()).hexdigest()
+    else:
+        stable_id = hashlib.md5(f"profilestack_{profile_name}".encode()).hexdigest()
+        try:
+            machine_id_file.write_text(stable_id, encoding="utf-8")
+        except Exception:
+            pass
+
+    seed = f"profilestack_oscrypt_v1:{stable_id}:{profile_name}"
+    aes_key = hmac.new(b"profilestack", seed.encode(), hashlib.sha256).digest()
+    dpapi_prefixed = b"DPAPI" + aes_key
+    encrypted_key_b64 = base64.b64encode(dpapi_prefixed).decode()
+
+    local_state_file = local_dir / "Local State"
+    ls_data = {}
+    if local_state_file.is_file():
+        try:
+            ls_data = json.loads(local_state_file.read_text(encoding="utf-8"))
+        except Exception:
+            ls_data = {}
+    os_crypt = ls_data.setdefault("os_crypt", {})
+    if not os_crypt.get("encrypted_key"):
+        os_crypt["encrypted_key"] = encrypted_key_b64
+        try:
+            local_state_file.write_text(json.dumps(ls_data, separators=(",", ":")), encoding="utf-8")
+        except Exception:
+            pass
+
+    return stable_id
+
+
+def inject_profile_preferences(local_dir: Path, machine: dict, profile_name: str, stable_id: str):
+    """Injects anti-DICE session persistence, device ID, and cookie settings into Default/Preferences."""
+    pref_file = local_dir / "Default" / "Preferences"
+    pref_data = {}
+    if pref_file.is_file():
+        try:
+            pref_data = json.loads(pref_file.read_text(encoding="utf-8"))
+        except Exception:
+            pref_data = {}
+    prof = pref_data.setdefault("profile", {})
+    prof["exit_type"] = "Normal"
+    prof["exited_cleanly"] = True
+    prof.setdefault("default_content_setting_values", {})["cookies"] = 1
+    prof["cookie_controls_mode"] = 0
+    prof["block_third_party_cookies"] = False
+
+    signin = pref_data.setdefault("signin", {})
+    signin["allowed"] = False
+    signin["allowed_on_next_startup"] = False
+
+    sess = pref_data.setdefault("session", {})
+    sess["restore_on_startup"] = 1
+
+    try:
+        device_uuid = str(uuid.UUID(stable_id))
+        gservices = pref_data.setdefault("google", {}).setdefault("services", {})
+        gservices["signin_scoped_device_id"] = device_uuid
+    except Exception:
+        pass
+
+    try:
+        pref_file.parent.mkdir(parents=True, exist_ok=True)
+        pref_file.write_text(json.dumps(pref_data, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 
 
 # ── Built-in SOCKS5/HTTP Proxy Forwarder ──────────────────────────────────────
@@ -585,18 +959,11 @@ def launch_native_profile(profile_name: str, server_url: str = DEFAULT_SERVER, t
                     except Exception:
                         pass
 
-    # Inject anti-DICE & session restore settings to maintain Google accounts
-    for p in [local_dir / "Default", local_dir / "Profile 1", local_dir / "Profile 2"]:
-        pref_file = p / "Preferences"
-        if pref_file.is_file():
-            try:
-                pdata = json.loads(pref_file.read_text(encoding="utf-8"))
-                pdata.setdefault("signin", {})["allowed"] = False
-                pdata.setdefault("signin", {})["allowed_on_next_startup"] = False
-                pdata.setdefault("session", {})["restore_on_startup"] = 1
-                pref_file.write_text(json.dumps(pdata, indent=2), encoding="utf-8")
-            except Exception:
-                pass
+    # Setup profile configuration, encryption key, preferences, and anti-detect extension
+    m = p_info.get("machine", {})
+    stable_id = inject_profile_local_state(profile_name, local_dir)
+    inject_profile_preferences(local_dir, m, profile_name, stable_id)
+    ext_dir = generate_antidetect_extension(profile_name, m, local_dir)
 
     for root, dirs, files in os.walk(local_dir):
         for d in dirs:
@@ -616,6 +983,10 @@ def launch_native_profile(profile_name: str, server_url: str = DEFAULT_SERVER, t
     flags = [
         browser_bin,
         f"--user-data-dir={local_dir}",
+        "--class=ProfileStackBrowser",
+        f"--app-id=profilestack_{profile_name}",
+        f"--load-extension={ext_dir}",
+        f"--disable-extensions-except={ext_dir}",
         "--password-store=basic",
         "--no-first-run",
         "--no-default-browser-check",
@@ -623,12 +994,14 @@ def launch_native_profile(profile_name: str, server_url: str = DEFAULT_SERVER, t
         "--disable-signin-scoped-device-id",
         "--disable-features=AccountConsistency,DesktopIdentityConsistency,LockProfileCookieDatabase",
         "--disable-blink-features=AutomationControlled",
+        "--disable-infobars",
+        "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+        "--force-webrtc-ip-handling-policy",
         "--disable-session-crashed-bubble",
         "--restore-last-session",
         "--ozone-platform-hint=auto",
     ]
 
-    m = p_info.get("machine", {})
     ua_file = local_dir / "user-agent.txt"
     if ua_file.is_file():
         ua_str = ua_file.read_text(encoding="utf-8").strip()
@@ -658,14 +1031,36 @@ def launch_native_profile(profile_name: str, server_url: str = DEFAULT_SERVER, t
     start_url = p_info.get("start_url") or "https://www.google.com"
     flags.append(start_url)
 
+    # Process Environment Setup (Timezone, Language, Desktop Class)
+    proc_env = os.environ.copy()
+    tz = m.get("timezone", "UTC")
+    if tz:
+        proc_env["TZ"] = tz
+    lang = m.get("language", "en-US")
+    if lang:
+        loc = lang.replace("-", "_") + ".UTF-8"
+        proc_env["LANG"] = loc
+        proc_env["LC_ALL"] = loc
+    proc_env["CHROME_DESKTOP"] = "profilestack-browser.desktop"
+
+    # CPU Core Affinity via taskset
+    spoof_cores = m.get("cpu_cores", 8)
+    cmd = flags
+    if shutil.which("taskset") and spoof_cores:
+        actual_cores = os.cpu_count() or 8
+        target_cores = min(spoof_cores, actual_cores)
+        if target_cores > 0:
+            cmd = ["taskset", "-c", f"0-{target_cores-1}"] + flags
+
     chrome_log = CONFIG_DIR / "chromium.log"
-    log(f"[*] Executing native browser: {' '.join(flags)}")
+    log(f"[*] Executing ProfileStack Browser: {' '.join(cmd)}")
 
     proc = None
     try:
         with open(chrome_log, "a", encoding="utf-8") as f_log:
             proc = subprocess.Popen(
-                flags,
+                cmd,
+                env=proc_env,
                 stdout=f_log,
                 stderr=subprocess.STDOUT,
             )
@@ -681,12 +1076,12 @@ def launch_native_profile(profile_name: str, server_url: str = DEFAULT_SERVER, t
             return
 
         ACTIVE_MGR.register(profile_name, proc, proxy_wrapper, proxy_val)
-        log(f"[+] Native browser running for '{profile_name}' (PID {proc.pid}) - NO virtual display.")
-        notify("ProfileStack Active", f"Native Chrome window opened for {profile_name}")
+        log(f"[+] ProfileStack Browser running for '{profile_name}' (PID {proc.pid}) with isolated hardware fingerprint.")
+        notify("ProfileStack Active", f"ProfileStack Browser opened for {profile_name} ({m.get('screen_resolution','1080p')}, {tz})")
 
         # Block in background thread until window is closed by user
         proc.wait()
-        log(f"[*] Native browser window closed for '{profile_name}' (PID {proc.pid}).")
+        log(f"[*] ProfileStack Browser window closed for '{profile_name}' (PID {proc.pid}).")
     except Exception as e:
         log(f"[!] Error running browser process: {e}")
         notify("ProfileStack Error", f"Execution error: {e}")
@@ -1428,6 +1823,9 @@ UI_HTML = """<!DOCTYPE html>
           </button>`;
         }
 
+        const tz = m.timezone || 'UTC';
+        const cores = m.cpu_cores || 8;
+
         html += `<tr>
           <td>
             <div class="profile-title">${p.name}</div>
@@ -1440,8 +1838,11 @@ UI_HTML = """<!DOCTYPE html>
             </div>
           </td>
           <td>
-            <div style="font-size:12px; color:var(--text-muted);">
-              Canvas Spoof: Active &bull; ${res} &bull; ${lang}
+            <div style="font-size:12px; color:var(--text-main); font-weight:500;">
+              ProfileStack Engine &bull; ${res}
+            </div>
+            <div style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); margin-top:2px;">
+              TZ: ${tz} &bull; ${cores} Cores &bull; WebGL Spoofed
             </div>
           </td>
           <td>${statusBadge}</td>
@@ -1464,7 +1865,7 @@ UI_HTML = """<!DOCTYPE html>
     }
 
     async function launchProfile(name) {
-      showToast(`Launching ${name} in real Chromium window...`);
+      showToast(`Launching ${name} in ProfileStack Browser...`);
       try {
         const res = await fetch('/api/local/launch', {
           method: 'POST',
