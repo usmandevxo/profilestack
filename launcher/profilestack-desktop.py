@@ -153,29 +153,55 @@ def setup_profilestack_browser() -> str:
                     pass
                 break
 
-def find_underlying_engine() -> str:
+def find_underlying_engine(preferred: str = "") -> str:
     """Finds the real Chromium engine executable (ignoring any profilestack wrappers)."""
+    if preferred:
+        p = shutil.which(preferred) or (preferred if os.path.isfile(preferred) and os.access(preferred, os.X_OK) else "")
+        if p and "profilestack" not in os.path.basename(p).lower():
+            return p
+
+    # Check environment variable overrides
+    env_bin = os.environ.get("PROFILESTACK_BROWSER_BIN") or os.environ.get("CHROME_BIN")
+    if env_bin:
+        p = shutil.which(env_bin) or (env_bin if os.path.isfile(env_bin) and os.access(env_bin, os.X_OK) else "")
+        if p and "profilestack" not in os.path.basename(p).lower():
+            return p
+
     for candidate in [
         BASE_LOCAL_DIR / "browser" / "chrome",
         BASE_LOCAL_DIR / "browser" / "chromium",
+        BASE_LOCAL_DIR / "browser" / "brave",
     ]:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
 
     for b in [
+        "brave-browser",
+        "brave-bin",
+        "brave",
         "chromium",
         "ungoogled-chromium",
         "chromium-browser",
-        "brave-bin",
-        "brave",
+        "google-chrome-stable",
+        "google-chrome",
         "microsoft-edge-stable",
         "microsoft-edge",
         "vivaldi",
-        "google-chrome-stable",
-        "google-chrome",
     ]:
         p = shutil.which(b)
         if p and "profilestack" not in os.path.basename(p).lower():
+            return p
+
+    # Common Linux fixed paths
+    for p in [
+        "/usr/bin/brave-browser",
+        "/usr/bin/brave",
+        "/usr/bin/chromium",
+        "/usr/bin/ungoogled-chromium",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+    ]:
+        if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
 
     return ""
@@ -2296,11 +2322,12 @@ def open_desktop_window(url: str):
 def browser_cli_main(cli_args: list[str]) -> int:
     """Standalone CLI runner for ProfileStack Browser."""
     profile_name = "Default"
-    urls_and_flags = []
-    i = 0
+    engine_override = ""
     show_list = False
     show_help = False
+    urls_and_flags: list[str] = []
 
+    i = 0
     while i < len(cli_args):
         arg = cli_args[i]
         if arg in ("-h", "--help"):
@@ -2314,6 +2341,12 @@ def browser_cli_main(cli_args: list[str]) -> int:
             i += 2
         elif arg.startswith("--profile="):
             profile_name = arg.split("=", 1)[1]
+            i += 1
+        elif arg in ("-e", "--engine") and i + 1 < len(cli_args):
+            engine_override = cli_args[i + 1]
+            i += 2
+        elif arg.startswith("--engine="):
+            engine_override = arg.split("=", 1)[1]
             i += 1
         elif arg in ("--desktop", "--gui", "--manager"):
             main()
@@ -2331,15 +2364,19 @@ Usage:
 
 Options:
   -p, --profile <name>   Launch a specific ProfileStack profile (default: 'Default')
+  -e, --engine <path>    Specify browser binary (e.g. brave, chromium, google-chrome)
   -l, --list             List all local ProfileStack profiles
   --desktop, --gui       Launch the ProfileStack Desktop manager interface
   -h, --help             Show this help message
 
+Environment Variables:
+  PROFILESTACK_BROWSER_BIN   Path to preferred engine (e.g. /usr/bin/brave-browser)
+
 Examples:
   profilestack-browser
-  profilestack-browser https://google.com
-  profilestack-browser -p FB_ads
-  profilestack-browser --profile FossilFuel https://iphey.com
+  profilestack-browser -p FossilFuel https://iphey.com
+  profilestack-browser -p FossilFuel -e brave
+  PROFILESTACK_BROWSER_BIN=/usr/bin/brave-browser profilestack-browser -p FossilFuel
 """)
         return 0
 
@@ -2369,7 +2406,7 @@ Examples:
         return 0
 
     # Locate underlying Chromium engine
-    engine_bin = find_underlying_engine()
+    engine_bin = find_underlying_engine(engine_override)
     if not engine_bin:
         print("[!] ProfileStack Browser error: No underlying Chromium engine found.", file=sys.stderr)
         print("    Please install Chromium: sudo pacman -S chromium (or sudo apt install chromium-browser)", file=sys.stderr)

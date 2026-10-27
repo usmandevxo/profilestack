@@ -76,15 +76,21 @@ echo "[*] Configuring dedicated ProfileStack Browser engine runner..."
 
 # Find underlying chromium binary
 CHROME_BIN=""
-for b in chromium ungoogled-chromium chromium-browser brave-bin brave google-chrome-stable google-chrome; do
-    if command -v "$b" &>/dev/null; then
-        p="$(command -v "$b")"
-        if [[ "$p" != *profilestack-browser* ]]; then
-            CHROME_BIN="$p"
-            break
+if [ -n "$PROFILESTACK_BROWSER_BIN" ] && [ -x "$PROFILESTACK_BROWSER_BIN" ]; then
+    CHROME_BIN="$PROFILESTACK_BROWSER_BIN"
+elif [ -n "$CHROME_BIN" ] && [ -x "$CHROME_BIN" ]; then
+    : # already set
+else
+    for b in brave-browser brave-bin brave chromium ungoogled-chromium chromium-browser google-chrome-stable google-chrome; do
+        if command -v "$b" &>/dev/null; then
+            p="$(command -v "$b")"
+            if [[ "$p" != *profilestack* ]]; then
+                CHROME_BIN="$p"
+                break
+            fi
         fi
-    fi
-done
+    done
+fi
 
 cat <<EOF > "$BROWSER_SCRIPT"
 #!/usr/bin/env bash
