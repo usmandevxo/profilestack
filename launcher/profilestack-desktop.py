@@ -153,56 +153,108 @@ def setup_profilestack_browser() -> str:
                     pass
                 break
 
-    # Locate underlying Chromium-compatible engine (avoiding recursive loop)
-    engine_bin = ""
+def find_underlying_engine() -> str:
+    """Finds the real Chromium engine executable (ignoring any profilestack wrappers)."""
     for candidate in [
         BASE_LOCAL_DIR / "browser" / "chrome",
         BASE_LOCAL_DIR / "browser" / "chromium",
     ]:
         if candidate.is_file() and os.access(candidate, os.X_OK):
-            engine_bin = str(candidate)
-            break
+            return str(candidate)
 
-    if not engine_bin:
-        for b in [
-            "chromium",
-            "ungoogled-chromium",
-            "chromium-browser",
-            "brave-bin",
-            "brave",
-            "microsoft-edge-stable",
-            "microsoft-edge",
-            "vivaldi",
-            "google-chrome-stable",
-            "google-chrome",
-        ]:
-            p = shutil.which(b)
-            if p and not p.endswith("profilestack-browser"):
-                engine_bin = p
-                break
+    for b in [
+        "chromium",
+        "ungoogled-chromium",
+        "chromium-browser",
+        "brave-bin",
+        "brave",
+        "microsoft-edge-stable",
+        "microsoft-edge",
+        "vivaldi",
+        "google-chrome-stable",
+        "google-chrome",
+    ]:
+        p = shutil.which(b)
+        if p and "profilestack" not in os.path.basename(p).lower():
+            return p
+
+    return ""
+
+
+def setup_profilestack_browser() -> str:
+    """Registers dedicated ~/.local/bin/profilestack-browser and its .desktop launcher."""
+    bin_dir = Path.home() / ".local" / "bin"
+    app_dir = Path.home() / ".local" / "share" / "applications"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    app_dir.mkdir(parents=True, exist_ok=True)
+
+    engine_bin = find_underlying_engine()
 
     runner_path = bin_dir / "profilestack-browser"
     runner_script = f"""#!/usr/bin/env bash
-# ProfileStack Browser - Dedicated Anti-Detect Browser Engine
+# ProfileStack Browser - Dedicated Anti-Detect Browser Engine Runner
+set -e
+
+# 1. If invoked with --desktop or --gui, launch ProfileStack Desktop Manager
+for arg in "$@"; do
+    if [ "$arg" = "--desktop" ] || [ "$arg" = "--gui" ] || [ "$arg" = "--manager" ]; then
+        if command -v profilestack-desktop &>/dev/null; then
+            exec profilestack-desktop
+        elif [ -x "$HOME/.local/bin/profilestack-desktop" ]; then
+            exec "$HOME/.local/bin/profilestack-desktop"
+        fi
+    fi
+done
+
+# 2. Prefer running through profilestack-desktop --browser (handles full anti-detect spoofing, extensions, and configs)
+if [ -x "$HOME/.local/bin/profilestack-desktop" ]; then
+    exec "$HOME/.local/bin/profilestack-desktop" --browser "$@"
+elif command -v profilestack-desktop &>/dev/null; then
+    exec "$(command -v profilestack-desktop)" --browser "$@"
+elif [ -f "$HOME/ProfileStack/launcher/profilestack-desktop.py" ] && command -v python3 &>/dev/null; then
+    exec python3 "$HOME/ProfileStack/launcher/profilestack-desktop.py" --browser "$@"
+elif [ -f "/www/wwwroot/profilestack/launcher/profilestack-desktop.py" ] && command -v python3 &>/dev/null; then
+    exec python3 "/www/wwwroot/profilestack/launcher/profilestack-desktop.py" --browser "$@"
+fi
+
+# 3. Fallback: locate engine and run strictly with isolated Default profile (NEVER personal Chrome profile)
 ENGINE="{engine_bin}"
 if [ -z "$ENGINE" ] || [ ! -x "$ENGINE" ]; then
     for b in chromium ungoogled-chromium chromium-browser brave-bin brave google-chrome-stable google-chrome; do
         if command -v "$b" &>/dev/null; then
             p="$(command -v "$b")"
-            if [[ "$p" != *profilestack-browser* ]]; then
+            if [[ "$p" != *profilestack* ]]; then
                 ENGINE="$p"
                 break
             fi
         fi
     done
 fi
+
 if [ -z "$ENGINE" ]; then
     echo "[!] ProfileStack Browser error: No underlying Chromium engine found." >&2
     echo "    Please install Chromium: sudo pacman -S chromium (or sudo apt install chromium-browser)" >&2
     exit 1
 fi
+
+PROFILE_DIR="$HOME/ProfileStack/profiles/Default"
+mkdir -p "$PROFILE_DIR"
 export CHROME_DESKTOP="profilestack-browser.desktop"
-exec "$ENGINE" --class=ProfileStackBrowser --app-id=profilestack "$@"
+exec "$ENGINE" \\
+    --user-data-dir="$PROFILE_DIR" \\
+    --class=ProfileStackBrowser \\
+    --app-id=profilestack_Default \\
+    --password-store=basic \\
+    --no-first-run \\
+    --no-default-browser-check \\
+    --disable-sync \\
+    --disable-signin-scoped-device-id \\
+    --disable-features=AccountConsistency,DesktopIdentityConsistency,LockProfileCookieDatabase \\
+    --disable-blink-features=AutomationControlled \\
+    --disable-session-crashed-bubble \\
+    --restore-last-session \\
+    --ozone-platform-hint=auto \\
+    "$@"
 """
     try:
         runner_path.write_text(runner_script, encoding="utf-8")
@@ -233,18 +285,15 @@ StartupWMClass=ProfileStackBrowser
 def find_browser_binary() -> str:
     """Finds the ProfileStack Browser runner or installed Chromium-based engine."""
     try:
-        runner = setup_profilestack_browser()
-        if runner and os.path.isfile(runner) and os.access(runner, os.X_OK):
-            return runner
+        setup_profilestack_browser()
     except Exception:
         pass
+    engine = find_underlying_engine()
+    if engine:
+        return engine
     bin_runner = Path.home() / ".local" / "bin" / "profilestack-browser"
     if bin_runner.is_file() and os.access(bin_runner, os.X_OK):
         return str(bin_runner)
-    for b in COMMON_BROWSER_BINS:
-        p = shutil.which(b)
-        if p and not p.endswith("profilestack-browser"):
-            return p
     return ""
 
 
@@ -455,10 +504,25 @@ def inject_profile_local_state(profile_name: str, local_dir: Path) -> str:
     os_crypt = ls_data.setdefault("os_crypt", {})
     if not os_crypt.get("encrypted_key"):
         os_crypt["encrypted_key"] = encrypted_key_b64
-        try:
-            local_state_file.write_text(json.dumps(ls_data, separators=(",", ":")), encoding="utf-8")
-        except Exception:
-            pass
+
+    # Pre-populate profile avatar and info_cache to eliminate Chromium's
+    # "Failed to PNG encode the image" error in profile_attributes_storage.cc
+    prof_sec = ls_data.setdefault("profile", {})
+    info_cache = prof_sec.setdefault("info_cache", {})
+    default_entry = info_cache.setdefault("Default", {})
+    default_entry.setdefault("active_time", time.time())
+    default_entry["avatar_icon"] = "chrome://theme/IDR_PROFILE_AVATAR_0"
+    default_entry["background_color"] = -1
+    default_entry["is_using_default_avatar"] = True
+    default_entry["is_using_default_name"] = True
+    default_entry["name"] = profile_name
+    default_entry["profile_highlight_color"] = -1
+    default_entry["use_gaia_picture"] = False
+
+    try:
+        local_state_file.write_text(json.dumps(ls_data, separators=(",", ":")), encoding="utf-8")
+    except Exception:
+        pass
 
     return stable_id
 
@@ -475,6 +539,10 @@ def inject_profile_preferences(local_dir: Path, machine: dict, profile_name: str
     prof = pref_data.setdefault("profile", {})
     prof["exit_type"] = "Normal"
     prof["exited_cleanly"] = True
+    prof["avatar_index"] = 0
+    prof["using_default_avatar"] = True
+    prof["using_default_name"] = False
+    prof["name"] = profile_name
     prof.setdefault("default_content_setting_values", {})["cookies"] = 1
     prof["cookie_controls_mode"] = 0
     prof["block_third_party_cookies"] = False
@@ -2168,6 +2236,243 @@ def open_desktop_window(url: str):
         return None
 
 
+# ── Browser CLI Runner ───────────────────────────────────────────────────────
+def browser_cli_main(cli_args: list[str]) -> int:
+    """Standalone CLI runner for ProfileStack Browser."""
+    profile_name = "Default"
+    urls_and_flags = []
+    i = 0
+    show_list = False
+    show_help = False
+
+    while i < len(cli_args):
+        arg = cli_args[i]
+        if arg in ("-h", "--help"):
+            show_help = True
+            i += 1
+        elif arg in ("-l", "--list"):
+            show_list = True
+            i += 1
+        elif arg in ("-p", "--profile") and i + 1 < len(cli_args):
+            profile_name = cli_args[i + 1]
+            i += 2
+        elif arg.startswith("--profile="):
+            profile_name = arg.split("=", 1)[1]
+            i += 1
+        elif arg in ("--desktop", "--gui", "--manager"):
+            main()
+            return 0
+        else:
+            urls_and_flags.append(arg)
+            i += 1
+
+    if show_help:
+        print("""ProfileStack Browser - Isolated Anti-Detect Browser Engine
+
+Usage:
+  profilestack-browser [options] [URL]
+  profilestack-browser -p <profile_name> [URL]
+
+Options:
+  -p, --profile <name>   Launch a specific ProfileStack profile (default: 'Default')
+  -l, --list             List all local ProfileStack profiles
+  --desktop, --gui       Launch the ProfileStack Desktop manager interface
+  -h, --help             Show this help message
+
+Examples:
+  profilestack-browser
+  profilestack-browser https://google.com
+  profilestack-browser -p FB_ads
+  profilestack-browser --profile FossilFuel https://iphey.com
+""")
+        return 0
+
+    if show_list:
+        print("\n" + "=" * 55)
+        print("         Local ProfileStack Profiles")
+        print("=" * 55)
+        PROFILES_LOCAL_DIR.mkdir(parents=True, exist_ok=True)
+        found = [d.name for d in PROFILES_LOCAL_DIR.iterdir() if d.is_dir() and not d.name.startswith(".")]
+        if not found:
+            print(" No local profiles found in ~/ProfileStack/profiles.")
+            print(" Run 'profilestack-desktop' to download and sync profiles.")
+        else:
+            for name in sorted(found):
+                cfg_file = PROFILES_LOCAL_DIR / name / "config.json"
+                extra = ""
+                if cfg_file.is_file():
+                    try:
+                        cdata = json.loads(cfg_file.read_text(encoding="utf-8"))
+                        p_proxy = cdata.get("proxy", "")
+                        if p_proxy:
+                            extra = f" (Proxy: {p_proxy})"
+                    except Exception:
+                        pass
+                print(f"  * {name}{extra}")
+        print("=" * 55 + "\n")
+        return 0
+
+    # Locate underlying Chromium engine
+    engine_bin = find_underlying_engine()
+    if not engine_bin:
+        print("[!] ProfileStack Browser error: No underlying Chromium engine found.", file=sys.stderr)
+        print("    Please install Chromium: sudo pacman -S chromium (or sudo apt install chromium-browser)", file=sys.stderr)
+        return 1
+
+    local_dir = PROFILES_LOCAL_DIR / profile_name
+    local_dir.mkdir(parents=True, exist_ok=True)
+
+    # Clean stale locks
+    for p in [local_dir, local_dir / "Default", local_dir / "Profile 1", local_dir / "Profile 2"]:
+        if p.is_dir():
+            for item in p.iterdir():
+                name_lower = item.name.lower()
+                if any(k in name_lower for k in ["singleton", "lock"]):
+                    try:
+                        item.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+    # Read profile config if available
+    cfg_file = local_dir / "config.json"
+    p_info = {}
+    if cfg_file.is_file():
+        try:
+            p_info = json.loads(cfg_file.read_text(encoding="utf-8"))
+        except Exception:
+            p_info = {}
+
+    m = p_info.get("machine", {})
+    if not m:
+        m = {
+            "cpu_cores": 8,
+            "screen_resolution": "1920x1080",
+            "timezone": "UTC",
+            "language": "en-US",
+            "gpu_mode": "discrete",
+        }
+
+    # Setup profile configuration, encryption key, preferences, and anti-detect extension
+    stable_id = inject_profile_local_state(profile_name, local_dir)
+    inject_profile_preferences(local_dir, m, profile_name, stable_id)
+    ext_dir = generate_antidetect_extension(profile_name, m, local_dir)
+
+    for root, dirs, files in os.walk(local_dir):
+        for d in dirs:
+            try:
+                os.chmod(os.path.join(root, d), 0o755)
+            except Exception:
+                pass
+        for f in files:
+            try:
+                os.chmod(os.path.join(root, f), 0o644)
+            except Exception:
+                pass
+
+    flags = [
+        engine_bin,
+        f"--user-data-dir={local_dir}",
+        "--class=ProfileStackBrowser",
+        f"--app-id=profilestack_{profile_name}",
+        f"--load-extension={ext_dir}",
+        f"--disable-extensions-except={ext_dir}",
+        "--password-store=basic",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-sync",
+        "--disable-signin-scoped-device-id",
+        "--disable-features=AccountConsistency,DesktopIdentityConsistency,LockProfileCookieDatabase",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-infobars",
+        "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+        "--force-webrtc-ip-handling-policy",
+        "--disable-session-crashed-bubble",
+        "--restore-last-session",
+        "--ozone-platform-hint=auto",
+    ]
+
+    ua_file = local_dir / "user-agent.txt"
+    if ua_file.is_file():
+        ua_str = ua_file.read_text(encoding="utf-8").strip()
+        if ua_str:
+            flags.append(f"--user-agent={ua_str}")
+    elif m.get("user_agent"):
+        flags.append(f"--user-agent={m['user_agent']}")
+
+    if m.get("language"):
+        flags.append(f"--lang={m['language']}")
+    if m.get("screen_resolution"):
+        flags.append(f"--window-size={m['screen_resolution'].replace('x', ',')}")
+
+    proxy_val = p_info.get("proxy", "")
+    proxy_wrapper = None
+    if proxy_val:
+        parsed = urllib.parse.urlparse(proxy_val)
+        scheme = parsed.scheme or "socks5"
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 1080
+        if parsed.username and parsed.password:
+            print(f"[*] Starting local authenticated proxy wrapper for {scheme}://{host}:{port}...")
+            proxy_wrapper = ProxyWrapper(scheme, host, port, parsed.username, parsed.password)
+            local_proxy_port = proxy_wrapper.start()
+            flags.append(f"--proxy-server=socks5://127.0.0.1:{local_proxy_port}")
+        else:
+            flags.append(f"--proxy-server={proxy_val}")
+
+    # Append URLs or extra flags passed by user
+    has_target_url = False
+    for item in urls_and_flags:
+        if not item.startswith("-"):
+            has_target_url = True
+        flags.append(item)
+
+    if not has_target_url:
+        start_url = p_info.get("start_url") or "https://www.google.com"
+        flags.append(start_url)
+
+    proc_env = os.environ.copy()
+    tz = m.get("timezone", "UTC")
+    if tz:
+        proc_env["TZ"] = tz
+    lang = m.get("language", "en-US")
+    if lang:
+        loc = lang.replace("-", "_") + ".UTF-8"
+        proc_env["LANG"] = loc
+        proc_env["LC_ALL"] = loc
+    proc_env["CHROME_DESKTOP"] = "profilestack-browser.desktop"
+
+    spoof_cores = m.get("cpu_cores", 8)
+    cmd = flags
+    if shutil.which("taskset") and spoof_cores:
+        actual_cores = os.cpu_count() or 8
+        target_cores = min(spoof_cores, actual_cores)
+        if target_cores > 0:
+            cmd = ["taskset", "-c", f"0-{target_cores-1}"] + flags
+
+    print("\n" + "=" * 65)
+    print(f" ProfileStack Browser  [Profile: {profile_name}]")
+    print("=" * 65)
+    print(f" Data Directory: {local_dir}")
+    print(f" Engine Binary:  {engine_bin}")
+    print(f" Display Class:  ProfileStackBrowser")
+    print(f" Fingerprint:    Active (WebGL, Canvas, Audio, {m.get('screen_resolution', '1080p')}, {tz})")
+    print("=" * 65 + "\n")
+
+    try:
+        proc = subprocess.Popen(cmd, env=proc_env)
+        proc.wait()
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"[!] Error running ProfileStack Browser: {e}", file=sys.stderr)
+        return 1
+    finally:
+        if proxy_wrapper:
+            proxy_wrapper.stop()
+
+    return 0
+
+
 # ── Entry Point ──────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="ProfileStack Desktop Application")
@@ -2230,4 +2535,8 @@ def main():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in ("--browser", "-b", "browser"):
+        sys.exit(browser_cli_main(sys.argv[2:]))
+    if sys.argv[0].endswith("profilestack-browser"):
+        sys.exit(browser_cli_main(sys.argv[1:]))
     main()

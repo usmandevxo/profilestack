@@ -89,25 +89,68 @@ done
 cat <<EOF > "$BROWSER_SCRIPT"
 #!/usr/bin/env bash
 # ProfileStack Browser - Dedicated Anti-Detect Browser Engine Runner
+set -e
+
+# 1. If invoked with --desktop or --gui, launch ProfileStack Desktop Manager
+for arg in "\$@"; do
+    if [ "\$arg" = "--desktop" ] || [ "\$arg" = "--gui" ] || [ "\$arg" = "--manager" ]; then
+        if command -v profilestack-desktop &>/dev/null; then
+            exec profilestack-desktop
+        elif [ -x "\$HOME/.local/bin/profilestack-desktop" ]; then
+            exec "\$HOME/.local/bin/profilestack-desktop"
+        fi
+    fi
+done
+
+# 2. Prefer running through profilestack-desktop --browser (handles full anti-detect spoofing, extensions, and configs)
+if [ -x "\$HOME/.local/bin/profilestack-desktop" ]; then
+    exec "\$HOME/.local/bin/profilestack-desktop" --browser "\$@"
+elif command -v profilestack-desktop &>/dev/null; then
+    exec "\$(command -v profilestack-desktop)" --browser "\$@"
+elif [ -f "\$HOME/ProfileStack/launcher/profilestack-desktop.py" ] && command -v python3 &>/dev/null; then
+    exec python3 "\$HOME/ProfileStack/launcher/profilestack-desktop.py" --browser "\$@"
+elif [ -f "/www/wwwroot/profilestack/launcher/profilestack-desktop.py" ] && command -v python3 &>/dev/null; then
+    exec python3 "/www/wwwroot/profilestack/launcher/profilestack-desktop.py" --browser "\$@"
+fi
+
+# 3. Fallback: locate engine and run strictly with isolated Default profile (NEVER personal Chrome profile)
 ENGINE="$CHROME_BIN"
 if [ -z "\$ENGINE" ] || [ ! -x "\$ENGINE" ]; then
     for b in chromium ungoogled-chromium chromium-browser brave-bin brave google-chrome-stable google-chrome; do
         if command -v "\$b" &>/dev/null; then
             p="\$(command -v "\$b")"
-            if [[ "\$p" != *profilestack-browser* ]]; then
+            if [[ "\$p" != *profilestack* ]]; then
                 ENGINE="\$p"
                 break
             fi
         fi
     done
 fi
+
 if [ -z "\$ENGINE" ]; then
     echo "[!] ProfileStack Browser error: No Chromium engine found." >&2
     echo "    Please install Chromium: sudo pacman -S chromium (or sudo apt install chromium-browser)" >&2
     exit 1
 fi
+
+PROFILE_DIR="\$HOME/ProfileStack/profiles/Default"
+mkdir -p "\$PROFILE_DIR"
 export CHROME_DESKTOP="profilestack-browser.desktop"
-exec "\$ENGINE" --class=ProfileStackBrowser --app-id=profilestack "\$@"
+exec "\$ENGINE" \\
+    --user-data-dir="\$PROFILE_DIR" \\
+    --class=ProfileStackBrowser \\
+    --app-id=profilestack_Default \\
+    --password-store=basic \\
+    --no-first-run \\
+    --no-default-browser-check \\
+    --disable-sync \\
+    --disable-signin-scoped-device-id \\
+    --disable-features=AccountConsistency,DesktopIdentityConsistency,LockProfileCookieDatabase \\
+    --disable-blink-features=AutomationControlled \\
+    --disable-session-crashed-bubble \\
+    --restore-last-session \\
+    --ozone-platform-hint=auto \\
+    "\$@"
 EOF
 chmod +x "$BROWSER_SCRIPT"
 
