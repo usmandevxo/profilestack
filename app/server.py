@@ -54,6 +54,7 @@ PUBLIC_PREFIXES = (
     "/favicon.svg",
     "/apple-touch-icon.png",
     "/install-launcher.sh",
+    "/install-desktop.sh",
     "/launcher/",
 )
 
@@ -554,12 +555,28 @@ async def get_install_launcher_script():
     return FileResponse(path=str(script_path), media_type="text/x-shellscript", filename="install-launcher.sh")
 
 
+@app.get("/install-desktop.sh")
+async def get_install_desktop_script():
+    script_path = BASE_DIR / "launcher" / "install-desktop.sh"
+    if not script_path.is_file():
+        raise HTTPException(status_code=404, detail="Install desktop script not found.")
+    return FileResponse(path=str(script_path), media_type="text/x-shellscript", filename="install-desktop.sh")
+
+
 @app.get("/launcher/profilestack-launcher.py")
 async def get_launcher_binary():
     bin_path = BASE_DIR / "launcher" / "profilestack-launcher.py"
     if not bin_path.is_file():
         raise HTTPException(status_code=404, detail="Launcher binary not found.")
     return FileResponse(path=str(bin_path), media_type="text/x-python", filename="profilestack-launcher.py")
+
+
+@app.get("/launcher/profilestack-desktop.py")
+async def get_desktop_binary():
+    bin_path = BASE_DIR / "launcher" / "profilestack-desktop.py"
+    if not bin_path.is_file():
+        raise HTTPException(status_code=404, detail="Desktop binary not found.")
+    return FileResponse(path=str(bin_path), media_type="text/x-python", filename="profilestack-desktop.py")
 
 
 # ── Global Proxy Store ────────────────────────────────────────────────────────
