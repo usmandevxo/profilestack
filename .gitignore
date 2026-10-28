@@ -16,6 +16,11 @@ data/*.json
 data/.empty
 !data/.gitkeep
 
+# Private MCP key material
+.env
+.env.*
+data/mcp-api-key
+
 # Logs & Temporary Files
 *.log
 *.tmp

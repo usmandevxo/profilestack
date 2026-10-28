@@ -19,6 +19,7 @@ import app.archive_manager as am
 import app.cdp_client as cdp
 import app.folder_manager as fm
 import app.auth_manager as auth
+from app.mcp_auth import valid_mcp_key
 
 # Ensure default administrator user is initialized
 auth.init_default_user()
@@ -47,9 +48,6 @@ templates = Jinja2Templates(directory=str(templates_path))
 PUBLIC_PREFIXES = (
     "/login",
     "/api/auth/login",
-    "/static/",
-    "/screenshots/",
-    "/mcp",
     "/favicon.ico",
     "/favicon.svg",
     "/apple-touch-icon.png",
@@ -62,7 +60,26 @@ PUBLIC_PREFIXES = (
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if any(path == p or path.startswith(p) for p in PUBLIC_PREFIXES):
+    # StaticFiles normalizes dot segments; reject them before prefix auth checks.
+    if any(part in (".", "..") for part in path.split("/")) or "\\" in path:
+        return JSONResponse(status_code=400, content={"detail": "Invalid path"}, headers={"Cache-Control": "no-store"})
+    if path == "/mcp" or path.startswith("/mcp/"):
+        if not valid_mcp_key(request.headers):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Unauthorized"},
+                headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"},
+            )
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
+    public_asset = path in {
+        "/static/apple-touch-icon.png", "/static/favicon.ico", "/static/favicon.svg",
+        "/static/favicon.png", "/static/favicon-16x16.png", "/static/favicon-32x32.png",
+    } or any(path.startswith(prefix) for prefix in ("/static/css/", "/static/js/", "/static/img/"))
+    if public_asset or any(path == p or (p.endswith("/") and path.startswith(p)) for p in PUBLIC_PREFIXES):
         return await call_next(request)
 
     token = request.cookies.get(auth.COOKIE_NAME)
@@ -216,6 +233,12 @@ async def logout_view(request: Request):
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(key=auth.COOKIE_NAME, path="/")
     return response
+
+
+@app.get("/api/auth/check", include_in_schema=False)
+async def auth_check():
+    """Minimal response for Nginx auth_request; middleware validates the session."""
+    return JSONResponse(content={"authenticated": True}, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/auth/me")
