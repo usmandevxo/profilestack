@@ -19,7 +19,9 @@
     return { id: key.id, name: key.name, prefix: key.prefix, status: key.status, created_at: key.created_at,
       expires_at: key.expires_at, last_used_at: key.last_used_at, revoked_at: key.revoked_at,
       permissions: Array.isArray(key.permissions) ? [...new Set(key.permissions.filter((id) => typeof id === 'string'))] : null,
-      profile_access: key.profile_access, profiles: Array.isArray(key.profiles) ? key.profiles.filter((name) => typeof name === 'string') : [] };
+      profile_access: key.profile_access,
+      profiles: Array.isArray(key.profiles) ? key.profiles.filter((name) => typeof name === 'string') : [],
+      folders: Array.isArray(key.folders) ? key.folders.filter((id) => typeof id === 'string') : [] };
   }
   function statusOf(key) {
     if (key.status === 'revoked' || key.revoked_at != null) return 'revoked';
@@ -87,7 +89,11 @@
       const name = document.createElement('span'); name.className = 'ak-key-name'; name.textContent = key.name;
       const prefix = document.createElement('code'); prefix.className = 'ak-key-prefix'; prefix.textContent = key.prefix;
       const access = document.createElement('span'); access.className = 'ak-key-access';
-      const boundary = key.profile_access === 'all' ? 'All profiles' : key.profile_access === 'selected'
+      const boundary = key.profile_access === 'all' ? 'All profiles' : key.profile_access === 'group'
+        ? (key.folders && key.folders.length
+            ? `Group: ${key.folders.map((fid) => (state.folders.find((f) => f.id === fid) || {}).name || fid).join(', ')}`
+            : 'Group-scoped')
+        : key.profile_access === 'selected'
         ? `${key.profiles.length} selected profile${key.profiles.length === 1 ? '' : 's'}` : 'Profile access unavailable';
       access.textContent = `${key.permissions ? `${key.permissions.length} permission${key.permissions.length === 1 ? '' : 's'}` : 'Permissions unavailable'} · ${boundary}`;
       identity.append(name, prefix, access);
@@ -98,7 +104,7 @@
       const actions = document.createElement('div'); actions.className = 'ak-actions';
       actions.append(button('Rename', 'btn-secondary', () => openRename(key), key.name));
       const editAccess = button('Edit access', 'btn-secondary', () => openAccess(key), key.name);
-      editAccess.disabled = !state.catalog.length || !key.permissions || !['all', 'selected'].includes(key.profile_access);
+      editAccess.disabled = !state.catalog.length || !key.permissions || !['all', 'selected', 'group'].includes(key.profile_access);
       actions.append(editAccess);
       if (status !== 'revoked') actions.append(button('Revoke', 'btn-danger', () => openRevoke(key), key.name));
       else { const note = document.createElement('span'); note.className = 'ak-muted'; note.textContent = 'Access removed'; actions.append(note); }
@@ -132,6 +138,7 @@
       }
       state.catalog = data.permission_catalog.map(({ id, label, group }) => ({ id, label, group }));
       state.profiles = data.available_profiles.map(({ name, folder }) => ({ name, folder: typeof folder === 'string' ? folder : '' }));
+      state.folders = Array.isArray(data.available_folders) ? data.available_folders.map(({ id, name, color }) => ({ id, name, color: typeof color === 'string' ? color : '#64748b' })) : [];
       state.keys = data.keys.map(metadata); state.legacy = metadata(data.legacy);
       const endpoint = new URL(data.endpoint, window.location.origin);
       state.endpoint = endpoint.origin === window.location.origin ? endpoint.href : new URL('/mcp/sse', window.location.origin).href;
@@ -175,7 +182,8 @@
     const root = $(id); root.replaceChildren();
     const permissions = new Set(policy.permissions || []);
     const selected = new Set(policy.profiles || []);
-    let scope = policy.profile_access === 'all' ? 'all' : 'selected';
+    const selectedFolders = new Set(policy.folders || []);
+    let scope = policy.profile_access === 'group' ? 'group' : policy.profile_access === 'all' ? 'all' : 'selected';
     const permissionInputs = new Map();
     const presets = makeElement('div', 'ak-presets');
     presets.setAttribute('role', 'group'); presets.setAttribute('aria-label', 'Permission presets');
@@ -195,15 +203,38 @@
     });
     const boundary = makeElement('fieldset', 'ak-boundary'); boundary.append(makeElement('legend', '', 'Profile boundary'));
     const scopes = makeElement('div', 'ak-scope-choices'); const scopeInputs = new Map();
-    [['all', 'All profiles'], ['selected', 'Selected profiles']].forEach(([value, text]) => {
+    [['all', 'All profiles'], ['group', 'Specific group / folder'], ['selected', 'Selected profiles']].forEach(([value, text]) => {
       const choice = makeElement('label', 'ak-choice'); const input = makeElement('input');
       input.type = 'radio'; input.name = `${id}-scope`; input.value = value;
       input.addEventListener('change', () => { scope = value; sync(); });
       scopeInputs.set(value, input); choice.append(input, makeElement('span', '', text)); scopes.append(choice);
     });
-    const globalNote = makeElement('p', 'ak-muted', 'Folder management, proxy permissions and system tools require all-profile access. Switching to selected profiles removes these permissions.');
+    const globalNote = makeElement('p', 'ak-muted', 'Folder management, proxy permissions and system tools require all-profile access. Restricting to a specific group or selected profiles removes these permissions.');
     globalNote.id = `${id}-global-note`;
     globalPermissions.forEach((permission) => permissionInputs.get(permission)?.setAttribute('aria-describedby', globalNote.id));
+
+    const groupSection = makeElement('div', 'ak-group-section');
+    const groupNote = makeElement('p', 'ak-muted', 'The key can only create, edit, delete, and control profiles inside the assigned group. It cannot access or move profiles outside this group.');
+    const groupList = makeElement('div', 'ak-group-list');
+    groupList.setAttribute('role', 'group'); groupList.setAttribute('aria-label', 'Assigned groups or folders');
+    const availableFolders = state.folders && state.folders.length ? state.folders : [{ id: 'default', name: 'General', color: '#64748b' }];
+    availableFolders.forEach((folder) => {
+      const choice = makeElement('label', 'ak-choice'); const input = makeElement('input');
+      input.type = 'checkbox'; input.value = folder.id; input.checked = selectedFolders.has(folder.id);
+      input.addEventListener('change', () => {
+        if (input.checked) selectedFolders.add(folder.id);
+        else selectedFolders.delete(folder.id);
+        sync();
+      });
+      const copy = makeElement('span');
+      const dot = makeElement('span', 'ak-folder-dot');
+      if (folder.color) dot.style.backgroundColor = folder.color;
+      copy.append(dot, makeElement('span', '', folder.name), makeElement('code', 'ak-permission-id', folder.id));
+      choice.append(input, copy); groupList.append(choice);
+    });
+    const groupCount = makeElement('p', 'ak-muted'); groupCount.setAttribute('role', 'status');
+    groupSection.append(groupNote, groupCount, groupList);
+
     const profileSection = makeElement('div', 'ak-profile-section');
     const searchLabel = makeElement('label', '', 'Search profiles'); searchLabel.htmlFor = `${id}-search`;
     const search = makeElement('input', 'ak-input'); search.id = searchLabel.htmlFor; search.type = 'search'; search.placeholder = 'Search by profile name or folder'; search.autocomplete = 'off';
@@ -228,9 +259,9 @@
     }
     search.addEventListener('input', filterProfiles);
     const selectionNote = makeElement('p', 'ak-muted', 'Zero selected profiles means no access to existing profiles. Profiles created by this key are automatically assigned to it.');
-    const allNote = makeElement('p', 'ak-muted', 'Includes every current and future profile. Permissions above still limit the available operations.');
+    const allNote = makeElement('p', 'ak-muted', 'Includes every current and future profile across all groups. Permissions above still limit the available operations.');
     profileSection.append(searchLabel, search, count, list, empty, selectionNote);
-    boundary.append(scopes, allNote, profileSection);
+    boundary.append(scopes, allNote, groupSection, profileSection);
     const presetButtons = new Map();
     [['Read-only', readOnly], ['Operator', operator], ['Full', state.catalog.map((item) => item.id)]].forEach(([text, ids]) => {
       const preset = button(text, 'btn-secondary', () => {
@@ -243,19 +274,35 @@
     presetNote.id = `${id}-preset-note`;
     function sync() {
       const isBusy = root.closest('dialog').dataset.busy === 'true';
-      if (scope === 'selected') globalPermissions.forEach((permission) => permissions.delete(permission));
+      if (scope !== 'all') globalPermissions.forEach((permission) => permissions.delete(permission));
       permissionInputs.forEach((input, permission) => {
-        input.checked = permissions.has(permission); input.disabled = isBusy || (scope === 'selected' && globalPermissions.has(permission));
+        input.checked = permissions.has(permission); input.disabled = isBusy || (scope !== 'all' && globalPermissions.has(permission));
       });
       scopeInputs.forEach((input, value) => { input.checked = scope === value; });
       presetButtons.forEach(({ preset, ids }, text) => preset.setAttribute('aria-pressed', String(ids.length === permissions.size && ids.every((permission) => permissions.has(permission)) && (text !== 'Full' || scope === 'all'))));
-      profileSection.hidden = scope !== 'selected'; allNote.hidden = scope !== 'all';
+      groupSection.hidden = scope !== 'group';
+      profileSection.hidden = scope !== 'selected';
+      allNote.hidden = scope !== 'all';
       summary.textContent = `${permissions.size} permission${permissions.size === 1 ? '' : 's'} selected${permissions.size ? '' : ' — this key cannot call any operations'}.`;
       count.textContent = `${selected.size} profile${selected.size === 1 ? '' : 's'} selected.`;
+      groupCount.textContent = `${selectedFolders.size} group${selectedFolders.size === 1 ? '' : 's'} assigned.`;
       filterProfiles();
     }
     root.append(makeElement('h3', 'ak-editor-title', 'Permissions'), presets, presetNote, summary, groups, globalNote, boundary);
-    const editor = { sync, value: () => ({ permissions: [...permissions], profile_access: scope, profiles: scope === 'selected' ? [...selected] : [] }) };
+    const editor = {
+      sync,
+      value: () => {
+        if (scope === 'group' && selectedFolders.size === 0 && availableFolders.length) {
+          selectedFolders.add(availableFolders[0].id);
+        }
+        return {
+          permissions: [...permissions],
+          profile_access: scope,
+          profiles: scope === 'selected' ? [...selected] : [],
+          folders: scope === 'group' ? [...selectedFolders] : []
+        };
+      }
+    };
     editors.set(id, editor); sync(); return editor;
   }
   function openAccess(key) {

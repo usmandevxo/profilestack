@@ -10,6 +10,7 @@ from app import api_key_store as store, auth_manager as auth
 from app.mcp_auth import MCP_API_KEY
 from app.key_policy import PERMISSIONS, DEFAULT_PERMISSIONS, validate_policy
 from app import profile_manager as pm
+from app import folder_manager as fm
 
 router = APIRouter()
 
@@ -54,17 +55,23 @@ class KeyName(BaseModel):
 
 class KeyPolicy(BaseModel):
     permissions: list[str] = Field(default_factory=lambda: list(DEFAULT_PERMISSIONS), max_length=50)
-    profile_access: Literal['all', 'selected'] = 'selected'
+    profile_access: Literal['all', 'selected', 'group'] = 'selected'
     profiles: list[str] = Field(default_factory=list, max_length=5000)
+    folders: list[str] = Field(default_factory=list, max_length=100)
 
     def checked(self):
         try:
-            policy = validate_policy(self.permissions, self.profile_access, self.profiles)
+            policy = validate_policy(self.permissions, self.profile_access, self.profiles, self.folders)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
-        available = {p['name'] for p in pm.list_profiles()}
-        if set(policy['profiles']) - available:
-            raise HTTPException(422, 'One or more selected profiles no longer exist. Refresh the profile list.')
+        if policy['profile_access'] == 'selected':
+            available = {p['name'] for p in pm.list_profiles()}
+            if set(policy['profiles']) - available:
+                raise HTTPException(422, 'One or more selected profiles no longer exist. Refresh the profile list.')
+        elif policy['profile_access'] == 'group':
+            available_folders = {f['id'] for f in fm.load_folders()}
+            if set(policy['folders']) - available_folders:
+                raise HTTPException(422, 'One or more selected groups/folders no longer exist.')
         return policy
 
 
@@ -79,7 +86,14 @@ def response(payload, status_code=200):
 @router.get("/api/api-keys", dependencies=[Depends(require_admin)])
 async def list_api_keys(request: Request):
     enabled = store.legacy_enabled()
-    return response({"permission_catalog": [{"id": k, "label": v[0], "group": v[1]} for k, v in PERMISSIONS.items()], "available_profiles": [{"name": p["name"], "folder": p.get("folder", "default")} for p in pm.list_profiles()], "keys": store.list_keys(), "legacy": {"id": "legacy", "name": "Legacy server key", "prefix": "Server-managed", "status": ("active" if enabled else "revoked") if MCP_API_KEY else "unavailable"}, "endpoint": str(request.base_url).rstrip("/") + "/mcp/sse"})
+    return response({
+        "permission_catalog": [{"id": k, "label": v[0], "group": v[1]} for k, v in PERMISSIONS.items()],
+        "available_profiles": [{"name": p["name"], "folder": p.get("folder", "default")} for p in pm.list_profiles()],
+        "available_folders": [{"id": f["id"], "name": f["name"], "color": f.get("color", "#64748b")} for f in fm.load_folders()],
+        "keys": store.list_keys(),
+        "legacy": {"id": "legacy", "name": "Legacy server key", "prefix": "Server-managed", "status": ("active" if enabled else "revoked") if MCP_API_KEY else "unavailable"},
+        "endpoint": str(request.base_url).rstrip("/") + "/mcp/sse",
+    })
 
 
 @router.post("/api/api-keys", status_code=201, dependencies=[Depends(require_admin)])

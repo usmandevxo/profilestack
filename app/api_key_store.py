@@ -23,7 +23,12 @@ def _db():
     try:
         con.execute("CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, prefix TEXT NOT NULL, digest TEXT NOT NULL UNIQUE, created_at REAL NOT NULL, expires_at REAL, last_used_at REAL, revoked_at REAL)")
         columns = {r[1] for r in con.execute("PRAGMA table_info(api_keys)")}
-        for column, definition in [('permissions', "TEXT NOT NULL DEFAULT '[" + ','.join(json.dumps(p) for p in ALL_PERMISSIONS) + "]'"), ('profile_access', "TEXT NOT NULL DEFAULT 'all'"), ('profiles', "TEXT NOT NULL DEFAULT '[]'")]:
+        for column, definition in [
+            ('permissions', "TEXT NOT NULL DEFAULT '[" + ','.join(json.dumps(p) for p in ALL_PERMISSIONS) + "]'"),
+            ('profile_access', "TEXT NOT NULL DEFAULT 'all'"),
+            ('profiles', "TEXT NOT NULL DEFAULT '[]'"),
+            ('folders', "TEXT NOT NULL DEFAULT '[]'"),
+        ]:
             if column not in columns:
                 con.execute(f"ALTER TABLE api_keys ADD COLUMN {column} {definition}")
         con.execute("CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)")
@@ -41,18 +46,22 @@ def _public(row):
     item.pop("digest", None)
     item['permissions'] = json.loads(item['permissions'])
     item['profiles'] = json.loads(item['profiles'])
+    item['folders'] = json.loads(item['folders']) if 'folders' in item and item['folders'] else []
     item["status"] = "revoked" if item["revoked_at"] else "expired" if item["expires_at"] and item["expires_at"] <= time.time() else "active"
     return item
 
 
-def create_key(name, expires_in_days, permissions=None, profile_access='all', profiles=None):
-    policy = validate_policy(ALL_PERMISSIONS if permissions is None else permissions, profile_access, profiles or [])
+def create_key(name, expires_in_days, permissions=None, profile_access='all', profiles=None, folders=None):
+    policy = validate_policy(ALL_PERMISSIONS if permissions is None else permissions, profile_access, profiles or [], folders or [])
     raw = "psk_" + secrets.token_urlsafe(36)
     now = time.time()
     item = (secrets.token_hex(12), name, raw[:12], hashlib.sha256(raw.encode()).hexdigest(), now, now + expires_in_days * 86400 if expires_in_days else None)
     with _db() as con:
         con.execute("INSERT INTO api_keys (id,name,prefix,digest,created_at,expires_at) VALUES (?,?,?,?,?,?)", item)
-        con.execute("UPDATE api_keys SET permissions=?,profile_access=?,profiles=? WHERE id=?", (json.dumps(policy['permissions']), policy['profile_access'], json.dumps(policy['profiles']), item[0]))
+        con.execute(
+            "UPDATE api_keys SET permissions=?,profile_access=?,profiles=?,folders=? WHERE id=?",
+            (json.dumps(policy['permissions']), policy['profile_access'], json.dumps(policy['profiles']), json.dumps(policy['folders']), item[0]),
+        )
         row = con.execute("SELECT * FROM api_keys WHERE id=?", (item[0],)).fetchone()
     return {"key": _public(row), "secret": raw}
 
@@ -116,10 +125,13 @@ def get_active_principal(key_id):
     return _public(row) if row else None
 
 
-def update_policy(key_id, permissions, profile_access, profiles):
-    policy = validate_policy(permissions, profile_access, profiles)
+def update_policy(key_id, permissions, profile_access, profiles, folders=None):
+    policy = validate_policy(permissions, profile_access, profiles, folders or [])
     with _db() as con:
-        cur = con.execute("UPDATE api_keys SET permissions=?,profile_access=?,profiles=? WHERE id=?", (json.dumps(policy['permissions']), policy['profile_access'], json.dumps(policy['profiles']), key_id))
+        cur = con.execute(
+            "UPDATE api_keys SET permissions=?,profile_access=?,profiles=?,folders=? WHERE id=?",
+            (json.dumps(policy['permissions']), policy['profile_access'], json.dumps(policy['profiles']), json.dumps(policy['folders']), key_id),
+        )
         row = con.execute("SELECT * FROM api_keys WHERE id=?", (key_id,)).fetchone()
     return _public(row) if cur.rowcount else None
 

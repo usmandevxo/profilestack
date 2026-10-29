@@ -85,8 +85,11 @@ def list_folders() -> str:
     """List all profile folders with stats (total profiles, colors, descriptions)."""
     folders = fm.list_folders_with_stats()
     principal = policy.current_principal.get()
-    if principal and principal['profile_access'] == 'selected':
-        allowed = [p for p in pm.list_profiles() if policy.visible_profile(p['name'])]
+    if principal and principal['profile_access'] == 'group':
+        allowed_folders = set(principal.get('folders', []))
+        folders = [f for f in folders if f['id'] in allowed_folders]
+    elif principal and principal['profile_access'] == 'selected':
+        allowed = [p for p in pm.list_profiles() if policy.visible_profile(p)]
         counts = {}
         for p in allowed:
             folder = p.get('folder', 'default')
@@ -162,7 +165,7 @@ def move_profile_to_folder(profile_name: str, target_folder_id: str) -> str:
 @secured_tool()
 def list_profiles(folder_id: Optional[str] = None) -> str:
     """List browser profiles, optionally filtered by folder_id. Returns status, ports, storage, and machine spoofing."""
-    profiles = [p for p in pm.list_profiles(folder_id=folder_id) if policy.visible_profile(p['name'])]
+    profiles = [p for p in pm.list_profiles(folder_id=folder_id) if policy.visible_profile(p)]
     return json.dumps(profiles, indent=2)
 
 
@@ -191,6 +194,11 @@ def create_profile(
         if start_url:
             check_browser_url(start_url)
         principal = policy.current_principal.get()
+        if principal and principal.get('profile_access') == 'group':
+            allowed_folders = principal.get('folders', [])
+            if not folder or folder == 'default':
+                if 'default' not in allowed_folders and allowed_folders:
+                    folder = allowed_folders[0]
         if principal and 'folders.manage' not in principal['permissions'] and not fm.get_folder((folder or 'default').strip().lower()):
             raise ValueError(policy.DENIED)
         res = pm.create_profile(

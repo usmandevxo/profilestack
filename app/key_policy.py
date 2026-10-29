@@ -37,16 +37,27 @@ current_principal: ContextVar[dict | None] = ContextVar('mcp_key_principal', def
 DENIED = 'Permission denied for this API key.'
 
 
-def validate_policy(permissions, profile_access, profiles):
+def validate_policy(permissions, profile_access, profiles, folders=None):
     if not isinstance(permissions, list) or any(p not in PERMISSIONS for p in permissions):
         raise ValueError('Unknown API key permission.')
-    if profile_access not in ('all', 'selected'):
-        raise ValueError('Choose all or selected profile access.')
+    if profile_access not in ('all', 'selected', 'group'):
+        raise ValueError('Choose all, group, or selected profile access.')
     if not isinstance(profiles, list) or any(not isinstance(p, str) or not p or len(p) > 128 for p in profiles):
         raise ValueError('Invalid profile selection.')
-    if profile_access == 'selected' and GLOBAL_PERMISSIONS.intersection(permissions):
+    if folders is None:
+        folders = []
+    if not isinstance(folders, list) or any(not isinstance(f, str) or not f or len(f) > 64 for f in folders):
+        raise ValueError('Invalid folder/group selection.')
+    if profile_access in ('selected', 'group') and GLOBAL_PERMISSIONS.intersection(permissions):
         raise ValueError('Global folder, proxy and telemetry permissions require all-profile access.')
-    return {'permissions': sorted(set(permissions)), 'profile_access': profile_access, 'profiles': sorted(set(profiles)) if profile_access == 'selected' else []}
+    if profile_access == 'group' and not folders:
+        raise ValueError('Select at least one group/folder for group-scoped access.')
+    return {
+        'permissions': sorted(set(permissions)),
+        'profile_access': profile_access,
+        'profiles': sorted(set(profiles)) if profile_access == 'selected' else [],
+        'folders': sorted(set(f.strip().lower() for f in folders)) if profile_access == 'group' else [],
+    }
 
 
 def authorize(tool, arguments):
@@ -61,17 +72,52 @@ def authorize(tool, arguments):
     permission = TOOL_PERMISSIONS.get(tool)
     if not permission or permission not in principal['permissions']:
         raise PermissionError(DENIED)
-    if principal['profile_access'] == 'selected':
+    if principal['profile_access'] in ('selected', 'group'):
         if permission in GLOBAL_PERMISSIONS:
             raise PermissionError(DENIED)
+
+    if principal['profile_access'] == 'selected':
         name = arguments.get('profile_name')
         if name and tool != 'create_profile' and name not in principal['profiles']:
             raise PermissionError(DENIED)
+    elif principal['profile_access'] == 'group':
+        allowed_folders = set(principal.get('folders', []))
+        if tool == 'create_profile':
+            target_folder = (arguments.get('folder') or 'default').strip().lower()
+            if target_folder not in allowed_folders:
+                raise PermissionError(DENIED)
+        else:
+            if name:
+                from app import profile_manager as pm
+                prof = pm.get_profile(name)
+                if not prof or (prof.get('folder') or 'default').strip().lower() not in allowed_folders:
+                    raise PermissionError(DENIED)
+            if tool == 'update_profile':
+                target_folder = arguments.get('folder')
+                if target_folder is not None and target_folder.strip().lower() not in allowed_folders:
+                    raise PermissionError(DENIED)
+            elif tool == 'move_profile_to_folder':
+                target_folder = arguments.get('target_folder_id')
+                if target_folder is not None and target_folder.strip().lower() not in allowed_folders:
+                    raise PermissionError(DENIED)
 
 
-def visible_profile(name):
+def visible_profile(profile_or_name):
     p = current_principal.get()
-    return p is None or p['profile_access'] == 'all' or name in p['profiles']
+    if p is None or p['profile_access'] == 'all':
+        return True
+    name = profile_or_name if isinstance(profile_or_name, str) else profile_or_name.get('name')
+    if p['profile_access'] == 'selected':
+        return name in p['profiles']
+    if p['profile_access'] == 'group':
+        if isinstance(profile_or_name, dict) and 'folder' in profile_or_name:
+            folder = (profile_or_name.get('folder') or 'default').strip().lower()
+        else:
+            from app import profile_manager as pm
+            prof = pm.get_profile(name)
+            folder = (prof.get('folder') or 'default').strip().lower() if prof else None
+        return folder in p.get('folders', [])
+    return False
 
 
 def sanitize_scoped_result(value):

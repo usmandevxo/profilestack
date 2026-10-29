@@ -38,6 +38,11 @@ class APIKeyRouteTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(edited.status_code, 200)
                 self.assertEqual(edited.json()['key']['profiles'], ['alpha'])
                 self.assertEqual((await client.get('/api/api-keys')).json()['keys'][0]['permissions'], sorted(policy['permissions']))
+                group_policy = {'permissions':['profiles.read','profiles.create','profiles.update','profiles.delete'], 'profile_access':'group', 'folders':['default']}
+                group_edited = await client.patch(path, json=group_policy)
+                self.assertEqual(group_edited.status_code, 200)
+                self.assertEqual(group_edited.json()['key']['profile_access'], 'group')
+                self.assertEqual(group_edited.json()['key']['folders'], ['default'])
                 for change in ({'permissions':['unknown']}, {'permissions':['system.read']}, {'profiles':['missing']}):
                     self.assertEqual((await client.patch(path,json={**policy,**change})).status_code,422)
                 self.assertEqual((await client.patch(path,json=policy,headers={'X-API-Key':created['secret']})).status_code,403)

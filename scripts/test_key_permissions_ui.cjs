@@ -28,6 +28,19 @@ const fs=require('fs'), path=require('path'), assert=require('assert');
   key=(await (await context.request.get(base+'/api/api-keys')).json()).keys.find(k=>k.id===id);assert.equal(key.permissions.length,14);assert.equal(key.profile_access,'all');
   await page.waitForFunction(()=>!document.querySelector('#ak-refresh').disabled);await open();edit=page.locator('#ak-edit-access');
   await edit.getByRole('button',{name:'Read-only permission preset',exact:true}).click();
+  await edit.getByRole('radio',{name:'Specific group / folder',exact:true}).check();
+  assert(await edit.locator('.ak-group-section').isVisible());
+  const marketChoice = edit.locator('.ak-group-section input[value="marketplaces"]');
+  if (await marketChoice.count() > 0) {
+    await marketChoice.check();
+  }
+  await page.locator('#ak-access-submit').click();await page.waitForFunction(()=>!document.querySelector('#ak-access-dialog').open);
+  key=(await (await context.request.get(base+'/api/api-keys')).json()).keys.find(k=>k.id===id);
+  assert.equal(key.profile_access,'group');
+  if (await marketChoice.count() > 0) {
+    assert(key.folders.includes('marketplaces'));
+  }
+  await page.waitForFunction(()=>!document.querySelector('#ak-refresh').disabled);await open();edit=page.locator('#ak-edit-access');
   await edit.getByRole('radio',{name:'Selected profiles',exact:true}).check();
   assert(await edit.locator('input[value="profiles.create"]').isChecked()===false);
   assert(await edit.locator('input[value="system.read"]').isDisabled());

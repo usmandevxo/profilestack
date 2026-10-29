@@ -136,6 +136,86 @@ class PermissionStoreTests(unittest.TestCase):
         finally:
             current_principal.reset(token)
 
+    def test_group_scoped_key_enforces_group_boundary(self):
+        import json
+        from app import mcp_server as ms
+        from app.key_policy import current_principal, authorize
+        result = store.create_key(
+            'Group Key',
+            30,
+            permissions=['profiles.read', 'profiles.create', 'profiles.update', 'profiles.delete', 'lifecycle.start'],
+            profile_access='group',
+            folders=['marketplaces'],
+        )
+        principal = store.get_principal(result['secret'])
+        self.assertEqual(principal['profile_access'], 'group')
+        self.assertEqual(principal['folders'], ['marketplaces'])
+
+        token = current_principal.set(principal)
+        try:
+            # 1. create_profile: allowed in marketplaces, denied in google_acc
+            authorize('create_profile', {'profile_name': 'm1', 'folder': 'marketplaces'})
+            with self.assertRaises(PermissionError):
+                authorize('create_profile', {'profile_name': 'g1', 'folder': 'google_acc'})
+
+            # Mock profiles: one in marketplaces, one in google_acc
+            mock_m1 = {'name': 'm1', 'folder': 'marketplaces'}
+            mock_g1 = {'name': 'g1', 'folder': 'google_acc'}
+
+            with patch.object(ms.pm, 'get_profile', side_effect=lambda n: mock_m1 if n == 'm1' else mock_g1 if n == 'g1' else None):
+                # 2. get_profile_details & lifecycle: allowed for m1, denied for g1
+                authorize('get_profile_details', {'profile_name': 'm1'})
+                authorize('start_profile', {'profile_name': 'm1'})
+                with self.assertRaises(PermissionError):
+                    authorize('get_profile_details', {'profile_name': 'g1'})
+                with self.assertRaises(PermissionError):
+                    authorize('start_profile', {'profile_name': 'g1'})
+
+                # 3. update_profile: allowed to update m1 without changing folder or staying in marketplaces
+                authorize('update_profile', {'profile_name': 'm1'})
+                authorize('update_profile', {'profile_name': 'm1', 'folder': 'marketplaces'})
+                # Denied to update g1
+                with self.assertRaises(PermissionError):
+                    authorize('update_profile', {'profile_name': 'g1'})
+                # Denied to move m1 outside marketplaces
+                with self.assertRaises(PermissionError):
+                    authorize('update_profile', {'profile_name': 'm1', 'folder': 'google_acc'})
+                with self.assertRaises(PermissionError):
+                    authorize('move_profile_to_folder', {'profile_name': 'm1', 'target_folder_id': 'google_acc'})
+
+                # 4. delete_profile: allowed for m1, denied for g1
+                authorize('delete_profile', {'profile_name': 'm1'})
+                with self.assertRaises(PermissionError):
+                    authorize('delete_profile', {'profile_name': 'g1'})
+        finally:
+            current_principal.reset(token)
+
+    def test_group_scoped_list_profiles_and_folders(self):
+        import json
+        from app import mcp_server as ms
+        from app.key_policy import current_principal
+        result = store.create_key('Group Key', 30, permissions=['profiles.read', 'folders.read'], profile_access='group', folders=['marketplaces'])
+        token = current_principal.set(store.get_principal(result['secret']))
+        try:
+            mock_profiles = [
+                {'name': 'm1', 'folder': 'marketplaces'},
+                {'name': 'm2', 'folder': 'marketplaces'},
+                {'name': 'g1', 'folder': 'google_acc'},
+            ]
+            mock_folders = [
+                {'id': 'default', 'name': 'General', 'total_profiles': 10},
+                {'id': 'marketplaces', 'name': 'Marketplaces', 'total_profiles': 2},
+                {'id': 'google_acc', 'name': 'Google_Acc', 'total_profiles': 5},
+            ]
+            with patch.object(ms.pm, 'list_profiles', return_value=mock_profiles), patch.object(ms.fm, 'list_folders_with_stats', return_value=mock_folders):
+                listed = json.loads(ms.list_profiles())
+                self.assertEqual([p['name'] for p in listed], ['m1', 'm2'])
+
+                folders = json.loads(ms.list_folders())
+                self.assertEqual([f['id'] for f in folders], ['marketplaces'])
+        finally:
+            current_principal.reset(token)
+
 
 class TransportPolicyTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

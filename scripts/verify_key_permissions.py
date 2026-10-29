@@ -79,6 +79,45 @@ async def main():
             print('Live selected-profile allow/deny and filtered real profile listing passed (no names or data logged).')
         else:
             raise AssertionError('Need two existing profiles to verify selected-profile boundary live.')
+
+        # Live group-scoped verification
+        g = store.create_key('Permission verification group ' + uuid.uuid4().hex[:8], 7, permissions=['profiles.read','profiles.create','profiles.update','profiles.delete','folders.read'], profile_access='group', folders=['marketplaces'])
+        keys.append(g)
+        async with sse_client(BASE+'/mcp/sse', headers={'X-API-Key':g['secret']}, timeout=20) as (read,write):
+            async with ClientSession(read,write) as session:
+                await session.initialize()
+                # 1. list_folders should only return 'marketplaces'
+                folders_res = await session.call_tool('list_folders',{})
+                assert not folders_res.is_error
+                folders = json.loads(folders_res.content[0].text)
+                assert all(f['id'] == 'marketplaces' for f in folders)
+
+                # 2. list_profiles should only return profiles in 'marketplaces'
+                profiles_res = await session.call_tool('list_profiles',{})
+                assert not profiles_res.is_error
+                profiles = json.loads(profiles_res.content[0].text)
+                for p in profiles:
+                    assert p.get('folder') == 'marketplaces'
+
+                # 3. create_profile targeting another group must be denied
+                res = await session.call_tool('create_profile',{'profile_name':'attempt-other-group','folder':'google_acc'})
+                assert res.is_error
+                assert 'Permission denied' in res.content[0].text
+
+                # 4. access to any profile outside marketplaces must be denied
+                non_market_profiles = [p['name'] for p in existing if p.get('folder') != 'marketplaces']
+                if non_market_profiles:
+                    other_name = non_market_profiles[0]
+                    res = await session.call_tool('get_profile_details',{'profile_name':other_name})
+                    assert res.is_error
+                    assert 'Permission denied' in res.content[0].text
+                    res = await session.call_tool('delete_profile',{'profile_name':other_name})
+                    assert res.is_error
+                    assert 'Permission denied' in res.content[0].text
+                    res = await session.call_tool('update_profile',{'profile_name':other_name})
+                    assert res.is_error
+                    assert 'Permission denied' in res.content[0].text
+        print('Live group-scoped folder isolation, profile listing, and create/update/delete boundaries passed.')
         print('Live scoped tool discovery, empty selections, direct-call denial, live permission edits and cross-key isolation passed.')
     finally:
         for item in keys:
