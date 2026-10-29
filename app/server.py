@@ -69,58 +69,80 @@ PUBLIC_PREFIXES = (
 )
 
 
-@app.middleware("http")
-async def auth_middleware(request: Request, call_next):
-    path = request.url.path
-    # StaticFiles normalizes dot segments; reject them before prefix auth checks.
-    if any(part in (".", "..") for part in path.split("/")) or "\\" in path:
-        return JSONResponse(status_code=400, content={"detail": "Invalid path"}, headers={"Cache-Control": "no-store"})
-    if path == "/mcp" or path.startswith("/mcp/"):
-        principal = resolve_mcp_principal(request.headers)
-        if principal is None:
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Unauthorized"},
-                headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"},
-            )
-        request.state.mcp_principal = principal
-        context_token = http_principal.set(principal)
-        try:
-            response = await call_next(request)
-        finally:
-            http_principal.reset(context_token)
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Referrer-Policy"] = "no-referrer"
-        return response
+class AuthMiddleware:
+    def __init__(self, app):
+        self.app = app
 
-    public_asset = path in {
-        "/static/apple-touch-icon.png", "/static/favicon.ico", "/static/favicon.svg",
-        "/static/favicon.png", "/static/favicon-16x16.png", "/static/favicon-32x32.png",
-    } or any(path.startswith(prefix) for prefix in ("/static/css/", "/static/js/", "/static/img/"))
-    if public_asset or any(path == p or (p.endswith("/") and path.startswith(p)) for p in PUBLIC_PREFIXES):
-        return await call_next(request)
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
 
-    token = request.cookies.get(auth.COOKIE_NAME)
-    if not token:
-        token = request.headers.get("X-Session-Token") or request.query_params.get("token")
+        request = Request(scope, receive=receive)
+        path = request.url.path
+
+        # StaticFiles normalizes dot segments; reject them before prefix auth checks.
+        if any(part in (".", "..") for part in path.split("/")) or "\\" in path:
+            response = JSONResponse(status_code=400, content={"detail": "Invalid path"}, headers={"Cache-Control": "no-store"})
+            return await response(scope, receive, send)
+
+        if path == "/mcp" or path.startswith("/mcp/"):
+            principal = resolve_mcp_principal(request.headers)
+            if principal is None:
+                response = JSONResponse(
+                    status_code=401,
+                    content={"detail": "Unauthorized"},
+                    headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"},
+                )
+                return await response(scope, receive, send)
+
+            scope.setdefault("state", {})["mcp_principal"] = principal
+            token = http_principal.set(principal)
+
+            async def send_with_headers(message):
+                if message["type"] == "http.response.start":
+                    headers = [(k, v) for k, v in message.get("headers", []) if k.lower() not in (b"cache-control", b"referrer-policy")]
+                    headers.append((b"cache-control", b"no-store"))
+                    headers.append((b"referrer-policy", b"no-referrer"))
+                    message["headers"] = headers
+                await send(message)
+
+            try:
+                return await self.app(scope, receive, send_with_headers)
+            finally:
+                http_principal.reset(token)
+
+        public_asset = path in {
+            "/static/apple-touch-icon.png", "/static/favicon.ico", "/static/favicon.svg",
+            "/static/favicon.png", "/static/favicon-16x16.png", "/static/favicon-32x32.png",
+        } or any(path.startswith(prefix) for prefix in ("/static/css/", "/static/js/", "/static/img/"))
+        if public_asset or any(path == p or (p.endswith("/") and path.startswith(p)) for p in PUBLIC_PREFIXES):
+            return await self.app(scope, receive, send)
+
+        token = request.cookies.get(auth.COOKIE_NAME)
         if not token:
-            auth_header = request.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                token = auth_header[7:].strip()
+            token = request.headers.get("X-Session-Token") or request.query_params.get("token")
+            if not token:
+                auth_header = request.headers.get("Authorization", "")
+                if auth_header.startswith("Bearer "):
+                    token = auth_header[7:].strip()
 
-    session = auth.validate_session(token) if token else None
+        session = auth.validate_session(token) if token else None
+        if session:
+            scope.setdefault("state", {})["user"] = session
+            return await self.app(scope, receive, send)
 
-    if session:
-        request.state.user = session
-        return await call_next(request)
+        if path.startswith("/api/"):
+            response = JSONResponse(status_code=401, content={"detail": "Authentication required."})
+            return await response(scope, receive, send)
 
-    if path.startswith("/api/"):
-        return JSONResponse(status_code=401, content={"detail": "Authentication required."})
+        next_url = str(request.url.path)
+        if request.url.query:
+            next_url += f"?{request.url.query}"
+        response = RedirectResponse(url=f"/login?next={quote(next_url)}", status_code=303)
+        return await response(scope, receive, send)
 
-    next_url = str(request.url.path)
-    if request.url.query:
-        next_url += f"?{request.url.query}"
-    return RedirectResponse(url=f"/login?next={quote(next_url)}", status_code=303)
+
+app.add_middleware(AuthMiddleware)
 
 
 # Request Models
