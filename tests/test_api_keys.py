@@ -57,6 +57,15 @@ class APIKeyRouteTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn(secret.encode(), (Path(self.temp.name)/"keys.sqlite3").read_bytes())
                 self.assertEqual((Path(self.temp.name)/"keys.sqlite3").stat().st_mode & 0o777, 0o600)
 
+    async def test_mcp_headers_cannot_manage_keys_even_with_admin_cookie(self):
+        with patch("app.auth_manager.validate_session", return_value={"username": "admin"}), patch("app.auth_manager.load_users", return_value={"admin": {"role": "admin"}}):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://testserver") as client:
+                for header in ({"X-API-Key": "test-key"}, {"Authorization": "Bearer test-key"}):
+                    headers = {**header, "Cookie": "ps_session=test", "X-ProfileStack-Management": "1"}
+                    for method, path in [("GET", "/api/api-keys"), ("POST", "/api/api-keys"), ("DELETE", "/api/api-keys/legacy"), ("GET", "/api-keys")]:
+                        r = await client.request(method, path, headers=headers, json={"name": "denied"})
+                        self.assertEqual(r.status_code, 403)
+
     async def test_expired_key_is_declined(self):
         from app import api_key_store as store
         import time

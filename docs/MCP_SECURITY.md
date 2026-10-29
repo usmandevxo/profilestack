@@ -27,6 +27,14 @@ Open `/api-keys` from **API Keys** in the sidebar while signed in as an administ
 - The original file/environment key appears as **Legacy server key**. Migrate existing clients first, then disable it from the page. Disabling is persistent and does not reveal or delete its original secret file.
 - Revocation and expiry reject subsequent authenticated requests immediately, including MCP message POSTs. Already-executing tool calls cannot be undone.
 
+## MCP separation from key administration
+
+- No API-key listing, creation, retrieval, or revocation tools are registered in MCP. Supplying an MCP key to the management REST API does not authorize it.
+- Key-management routes additionally reject API-key/Authorization headers even if an administrator cookie is present. Only the administrator web-cookie workflow is supported.
+- MCP refuses host-folder mounts and refuses starting, restarting, or browser-controlling profiles configured with such mounts.
+- Before MCP browser inspection, scripting, interaction, navigation, or screenshots, page URLs are checked. Known ProfileStack administration hosts, loopback/private IP literals, local files and non-web schemes are denied. Direct navigation/start URLs receive the same guard.
+- These URL checks are defense in depth, not a browser/network sandbox. Arbitrary browser JavaScript, redirects, alternate DNS names, browser state races, and separately granted host/CDP/shell access are outside a simple URL guard's security guarantee. Never sign in to ProfileStack administration inside an MCP-controlled profile or share administrator cookies, credentials, or server access with an untrusted agent. Host administrators can access the service's files by OS authority; MCP authentication cannot restrict that independent authority.
+
 ## Legacy server configuration
 
 Configuration precedence:

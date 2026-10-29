@@ -23,6 +23,7 @@ import app.proxy_manager as prm
 import app.folder_manager as fm
 import app.cdp_client as cdp
 from app.config import DATA_DIR
+from app.mcp_isolation import DENIED, check_browser_url, check_browser, check_profile
 
 SCREENSHOTS_DIR = DATA_DIR / "screenshots"
 SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -136,6 +137,10 @@ def create_profile(
 ) -> str:
     """Create a new isolated browser profile inside a folder with persistent anti-detect machine fingerprint."""
     try:
+        if host_mount:
+            raise ValueError(DENIED)
+        if start_url:
+            check_browser_url(start_url)
         res = pm.create_profile(
             name=profile_name,
             folder=folder or "default",
@@ -160,6 +165,11 @@ def update_profile(
 ) -> str:
     """Update profile configuration settings (folder, proxy, start URL, host folder mount, note)."""
     try:
+        if host_mount:
+            raise ValueError(DENIED)
+        check_profile(pm.get_profile(profile_name))
+        if start_url:
+            check_browser_url(start_url)
         res = pm.update_profile(
             name=profile_name,
             folder=folder,
@@ -191,6 +201,10 @@ def delete_profile(profile_name: str) -> str:
 def start_profile(profile_name: str) -> str:
     """Start a profile's container. Returns allocated VNC web streaming port and CDP automation debug port."""
     try:
+        profile = pm.get_profile(profile_name)
+        check_profile(profile)
+        if profile and profile.get("start_url"):
+            check_browser_url(profile["start_url"])
         res = pm.start_profile(profile_name)
         return json.dumps(res)
     except Exception as e:
@@ -211,6 +225,10 @@ def stop_profile(profile_name: str) -> str:
 def restart_profile(profile_name: str) -> str:
     """Restart a profile's container."""
     try:
+        profile = pm.get_profile(profile_name)
+        check_profile(profile)
+        if profile and profile.get("start_url"):
+            check_browser_url(profile["start_url"])
         res = pm.restart_profile(profile_name)
         return json.dumps(res)
     except Exception as e:
@@ -275,6 +293,7 @@ def _get_cdp_port(profile_name: str) -> int:
     p = pm.get_profile(profile_name)
     if not p:
         raise ValueError(f"Profile '{profile_name}' not found.")
+    check_profile(p)
     if p["status"] != "running":
         raise ValueError(f"Profile '{profile_name}' is not running. Start it first.")
     port = p.get("cdp_port")
@@ -288,6 +307,8 @@ async def navigate_browser(profile_name: str, url: str) -> str:
     """Navigate the profile's active browser window to a target URL."""
     try:
         port = _get_cdp_port(profile_name)
+        await check_browser(port, cdp)
+        check_browser_url(url)
         res = await cdp.navigate_tab(port, url)
         return json.dumps(res)
     except Exception as e:
@@ -299,6 +320,7 @@ async def get_active_page_details(profile_name: str) -> str:
     """Get active browser tab details: title, URL, and visible text snippet."""
     try:
         port = _get_cdp_port(profile_name)
+        await check_browser(port, cdp)
         tabs = await cdp.get_browser_tabs(port)
         page_tabs = [t for t in tabs if t.get("type") == "page"]
         if not page_tabs:
@@ -320,6 +342,7 @@ async def evaluate_javascript(profile_name: str, javascript: str) -> str:
     """Evaluate a JavaScript expression inside the profile's active browser page and return the result."""
     try:
         port = _get_cdp_port(profile_name)
+        await check_browser(port, cdp)
         val = await cdp.evaluate_script(port, javascript)
         return json.dumps({"result": val})
     except Exception as e:
@@ -331,6 +354,7 @@ async def click_element(profile_name: str, selector: str) -> str:
     """Click an element on the active page matching a CSS selector."""
     try:
         port = _get_cdp_port(profile_name)
+        await check_browser(port, cdp)
         js_code = f"""
         (() => {{
             const el = document.querySelector({json.dumps(selector)});
@@ -351,6 +375,7 @@ async def type_into_element(profile_name: str, selector: str, text: str) -> str:
     """Type text into an input or textarea element matching a CSS selector."""
     try:
         port = _get_cdp_port(profile_name)
+        await check_browser(port, cdp)
         js_code = f"""
         (() => {{
             const el = document.querySelector({json.dumps(selector)});
@@ -373,6 +398,7 @@ async def take_screenshot(profile_name: str) -> str:
     """Capture a screenshot of the active browser window and save to disk."""
     try:
         port = _get_cdp_port(profile_name)
+        await check_browser(port, cdp)
         b64_data = await cdp.capture_screenshot_base64(port, format="png")
         if not b64_data:
             return json.dumps({"error": "Failed to capture screenshot data."})

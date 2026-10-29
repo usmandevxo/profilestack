@@ -13,6 +13,9 @@ router = APIRouter()
 
 
 def require_admin(request: Request):
+    # Never combine MCP credentials with administrator credential management.
+    if request.headers.get("X-API-Key") or request.headers.get("Authorization"):
+        raise HTTPException(403, "API credentials cannot access key management.")
     # Deliberately require the HttpOnly web cookie, not a key, URL token or bearer session.
     session = auth.validate_session(request.cookies.get(auth.COOKIE_NAME, ""))
     if not session:
