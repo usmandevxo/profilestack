@@ -1,5 +1,7 @@
 """Persistent MCP credentials: high-entropy secrets, only SHA-256 digests at rest."""
 import hashlib
+import json
+from app.key_policy import ALL_PERMISSIONS, validate_policy
 import os
 import secrets
 import sqlite3
@@ -20,6 +22,10 @@ def _db():
     con.row_factory = sqlite3.Row
     try:
         con.execute("CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, prefix TEXT NOT NULL, digest TEXT NOT NULL UNIQUE, created_at REAL NOT NULL, expires_at REAL, last_used_at REAL, revoked_at REAL)")
+        columns = {r[1] for r in con.execute("PRAGMA table_info(api_keys)")}
+        for column, definition in [('permissions', "TEXT NOT NULL DEFAULT '[" + ','.join(json.dumps(p) for p in ALL_PERMISSIONS) + "]'"), ('profile_access', "TEXT NOT NULL DEFAULT 'all'"), ('profiles', "TEXT NOT NULL DEFAULT '[]'")]:
+            if column not in columns:
+                con.execute(f"ALTER TABLE api_keys ADD COLUMN {column} {definition}")
         con.execute("CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)")
         yield con
         con.commit()
@@ -33,16 +39,20 @@ def _db():
 def _public(row):
     item = dict(row)
     item.pop("digest", None)
+    item['permissions'] = json.loads(item['permissions'])
+    item['profiles'] = json.loads(item['profiles'])
     item["status"] = "revoked" if item["revoked_at"] else "expired" if item["expires_at"] and item["expires_at"] <= time.time() else "active"
     return item
 
 
-def create_key(name, expires_in_days):
+def create_key(name, expires_in_days, permissions=None, profile_access='all', profiles=None):
+    policy = validate_policy(ALL_PERMISSIONS if permissions is None else permissions, profile_access, profiles or [])
     raw = "psk_" + secrets.token_urlsafe(36)
     now = time.time()
     item = (secrets.token_hex(12), name, raw[:12], hashlib.sha256(raw.encode()).hexdigest(), now, now + expires_in_days * 86400 if expires_in_days else None)
     with _db() as con:
         con.execute("INSERT INTO api_keys (id,name,prefix,digest,created_at,expires_at) VALUES (?,?,?,?,?,?)", item)
+        con.execute("UPDATE api_keys SET permissions=?,profile_access=?,profiles=? WHERE id=?", (json.dumps(policy['permissions']), policy['profile_access'], json.dumps(policy['profiles']), item[0]))
         row = con.execute("SELECT * FROM api_keys WHERE id=?", (item[0],)).fetchone()
     return {"key": _public(row), "secret": raw}
 
@@ -90,3 +100,33 @@ def validate_key(raw):
             return False
         con.execute("UPDATE api_keys SET last_used_at=? WHERE id=? AND (last_used_at IS NULL OR last_used_at<?)", (now, row["id"], now - 30))
     return True
+
+
+def get_principal(raw):
+    if not validate_key(raw):
+        return None
+    with _db() as con:
+        row = con.execute("SELECT * FROM api_keys WHERE digest=?", (hashlib.sha256(raw.encode()).hexdigest(),)).fetchone()
+    return _public(row) if row else None
+
+
+def get_active_principal(key_id):
+    with _db() as con:
+        row = con.execute("SELECT * FROM api_keys WHERE id=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?)", (key_id, time.time())).fetchone()
+    return _public(row) if row else None
+
+
+def update_policy(key_id, permissions, profile_access, profiles):
+    policy = validate_policy(permissions, profile_access, profiles)
+    with _db() as con:
+        cur = con.execute("UPDATE api_keys SET permissions=?,profile_access=?,profiles=? WHERE id=?", (json.dumps(policy['permissions']), policy['profile_access'], json.dumps(policy['profiles']), key_id))
+        row = con.execute("SELECT * FROM api_keys WHERE id=?", (key_id,)).fetchone()
+    return _public(row) if cur.rowcount else None
+
+
+def assign_created_profile(key_id, profile_name):
+    with _db() as con:
+        row = con.execute("SELECT profiles,profile_access FROM api_keys WHERE id=?", (key_id,)).fetchone()
+        if row and row['profile_access'] == 'selected':
+            profiles = sorted(set(json.loads(row['profiles']) + [profile_name]))
+            con.execute("UPDATE api_keys SET profiles=? WHERE id=?", (json.dumps(profiles), key_id))

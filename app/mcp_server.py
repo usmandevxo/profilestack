@@ -23,6 +23,10 @@ import app.proxy_manager as prm
 import app.folder_manager as fm
 import app.cdp_client as cdp
 from app.config import DATA_DIR
+from app import key_policy as policy, api_key_store
+from app.mcp_policy import enforce_key_policy
+from functools import wraps
+import inspect
 from app.mcp_isolation import DENIED, check_browser_url, check_browser, check_profile
 
 SCREENSHOTS_DIR = DATA_DIR / "screenshots"
@@ -34,19 +38,64 @@ mcp = MCPServer(
     description="ProfileStack Anti-Detect Browser Cluster & Multimodal Automation Protocol",
 )
 
+mcp.middleware.append(enforce_key_policy)
+
+
+def secured_tool():
+    def register(fn):
+        signature = inspect.signature(fn)
+        @wraps(fn)
+        def guarded(*args, **kwargs):
+            arguments = signature.bind(*args, **kwargs).arguments
+            try:
+                policy.authorize(fn.__name__, arguments)
+            except PermissionError:
+                return json.dumps({'error': policy.DENIED})
+            result = fn(*args, **kwargs)
+            try:
+                return json.dumps(policy.sanitize_scoped_result(json.loads(result)))
+            except (ValueError, TypeError):
+                return result
+        if inspect.iscoroutinefunction(fn):
+            @wraps(fn)
+            async def async_guarded(*args, **kwargs):
+                arguments = signature.bind(*args, **kwargs).arguments
+                try:
+                    policy.authorize(fn.__name__, arguments)
+                except PermissionError:
+                    return json.dumps({'error': policy.DENIED})
+                result = await fn(*args, **kwargs)
+                try:
+                    return json.dumps(policy.sanitize_scoped_result(json.loads(result)))
+                except (ValueError, TypeError):
+                    return result
+            mcp.tool()(async_guarded)
+            return async_guarded
+        mcp.tool()(guarded)
+        return guarded
+    return register
+
 
 # ==============================================================================
 # 1. Folder Management Tools
 # ==============================================================================
 
-@mcp.tool()
+@secured_tool()
 def list_folders() -> str:
     """List all profile folders with stats (total profiles, colors, descriptions)."""
     folders = fm.list_folders_with_stats()
+    principal = policy.current_principal.get()
+    if principal and principal['profile_access'] == 'selected':
+        allowed = [p for p in pm.list_profiles() if policy.visible_profile(p['name'])]
+        counts = {}
+        for p in allowed:
+            folder = p.get('folder', 'default')
+            counts[folder] = counts.get(folder, 0) + 1
+        folders = [{**f, 'total_profiles': counts[f['id']]} for f in folders if f['id'] in counts]
     return json.dumps(folders, indent=2)
 
 
-@mcp.tool()
+@secured_tool()
 def create_folder(
     name: str,
     description: Optional[str] = "",
@@ -66,7 +115,7 @@ def create_folder(
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 def update_folder(
     folder_id: str,
     name: Optional[str] = None,
@@ -86,7 +135,7 @@ def update_folder(
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 def delete_folder(folder_id: str, move_to: Optional[str] = "default") -> str:
     """Delete a folder, reassigning contained profiles to move_to folder (defaults to 'default')."""
     try:
@@ -96,7 +145,7 @@ def delete_folder(folder_id: str, move_to: Optional[str] = "default") -> str:
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 def move_profile_to_folder(profile_name: str, target_folder_id: str) -> str:
     """Move a profile from its current folder into a new folder/category."""
     try:
@@ -110,14 +159,14 @@ def move_profile_to_folder(profile_name: str, target_folder_id: str) -> str:
 # 2. Profile Management Tools
 # ==============================================================================
 
-@mcp.tool()
+@secured_tool()
 def list_profiles(folder_id: Optional[str] = None) -> str:
     """List browser profiles, optionally filtered by folder_id. Returns status, ports, storage, and machine spoofing."""
-    profiles = pm.list_profiles(folder_id=folder_id)
+    profiles = [p for p in pm.list_profiles(folder_id=folder_id) if policy.visible_profile(p['name'])]
     return json.dumps(profiles, indent=2)
 
 
-@mcp.tool()
+@secured_tool()
 def get_profile_details(profile_name: str) -> str:
     """Get complete details, live metrics (CPU%, RAM), and ports of a single profile."""
     p = pm.get_profile(profile_name)
@@ -126,7 +175,7 @@ def get_profile_details(profile_name: str) -> str:
     return json.dumps(p, indent=2)
 
 
-@mcp.tool()
+@secured_tool()
 def create_profile(
     profile_name: str,
     folder: Optional[str] = "default",
@@ -141,6 +190,9 @@ def create_profile(
             raise ValueError(DENIED)
         if start_url:
             check_browser_url(start_url)
+        principal = policy.current_principal.get()
+        if principal and 'folders.manage' not in principal['permissions'] and not fm.get_folder((folder or 'default').strip().lower()):
+            raise ValueError(policy.DENIED)
         res = pm.create_profile(
             name=profile_name,
             folder=folder or "default",
@@ -149,12 +201,15 @@ def create_profile(
             host_mount=host_mount or "",
             note=note or "",
         )
+        principal = policy.current_principal.get()
+        if principal and principal['profile_access'] == 'selected':
+            api_key_store.assign_created_profile(principal['id'], profile_name)
         return json.dumps({"status": "success", "profile": res})
     except Exception as e:
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 def update_profile(
     profile_name: str,
     folder: Optional[str] = None,
@@ -170,6 +225,9 @@ def update_profile(
         check_profile(pm.get_profile(profile_name))
         if start_url:
             check_browser_url(start_url)
+        principal = policy.current_principal.get()
+        if folder is not None and principal and 'folders.manage' not in principal['permissions'] and not fm.get_folder(folder.strip().lower()):
+            raise ValueError(policy.DENIED)
         res = pm.update_profile(
             name=profile_name,
             folder=folder,
@@ -183,7 +241,7 @@ def update_profile(
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 def delete_profile(profile_name: str) -> str:
     """Delete a profile, destroy its Docker container, and delete on-disk browser storage."""
     try:
@@ -197,7 +255,7 @@ def delete_profile(profile_name: str) -> str:
 # 2. Container Lifecycle Tools
 # ==============================================================================
 
-@mcp.tool()
+@secured_tool()
 def start_profile(profile_name: str) -> str:
     """Start a profile's container. Returns allocated VNC web streaming port and CDP automation debug port."""
     try:
@@ -211,7 +269,7 @@ def start_profile(profile_name: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 def stop_profile(profile_name: str) -> str:
     """Stop a running profile's container to free system CPU and memory resources."""
     try:
@@ -221,7 +279,7 @@ def stop_profile(profile_name: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 def restart_profile(profile_name: str) -> str:
     """Restart a profile's container."""
     try:
@@ -239,13 +297,13 @@ def restart_profile(profile_name: str) -> str:
 # 3. Proxy Catalog Tools
 # ==============================================================================
 
-@mcp.tool()
+@secured_tool()
 def list_proxies() -> str:
     """List all saved proxies in the global proxy catalog."""
     return json.dumps(prm.list_proxies(), indent=2)
 
 
-@mcp.tool()
+@secured_tool()
 def add_proxy(name: str, url: str, note: Optional[str] = "") -> str:
     """Add a new proxy to the catalog (e.g. socks5://user:pass@host:port)."""
     try:
@@ -255,7 +313,7 @@ def add_proxy(name: str, url: str, note: Optional[str] = "") -> str:
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 def delete_proxy(name: str) -> str:
     """Delete a proxy from the catalog."""
     try:
@@ -265,7 +323,7 @@ def delete_proxy(name: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 async def test_proxy(url: str) -> str:
     """Test a proxy URL for connectivity, latency (ms), and public egress IP address."""
     try:
@@ -279,7 +337,7 @@ async def test_proxy(url: str) -> str:
 # 4. System Telemetry
 # ==============================================================================
 
-@mcp.tool()
+@secured_tool()
 def get_system_telemetry() -> str:
     """Get host telemetry: CPU usage %, RAM used/total GB, disk used/total GB, and active profile count."""
     return json.dumps(pm.system_telemetry(), indent=2)
@@ -302,7 +360,7 @@ def _get_cdp_port(profile_name: str) -> int:
     return int(port)
 
 
-@mcp.tool()
+@secured_tool()
 async def navigate_browser(profile_name: str, url: str) -> str:
     """Navigate the profile's active browser window to a target URL."""
     try:
@@ -315,7 +373,7 @@ async def navigate_browser(profile_name: str, url: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 async def get_active_page_details(profile_name: str) -> str:
     """Get active browser tab details: title, URL, and visible text snippet."""
     try:
@@ -337,7 +395,7 @@ async def get_active_page_details(profile_name: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 async def evaluate_javascript(profile_name: str, javascript: str) -> str:
     """Evaluate a JavaScript expression inside the profile's active browser page and return the result."""
     try:
@@ -349,7 +407,7 @@ async def evaluate_javascript(profile_name: str, javascript: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 async def click_element(profile_name: str, selector: str) -> str:
     """Click an element on the active page matching a CSS selector."""
     try:
@@ -370,7 +428,7 @@ async def click_element(profile_name: str, selector: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 async def type_into_element(profile_name: str, selector: str, text: str) -> str:
     """Type text into an input or textarea element matching a CSS selector."""
     try:
@@ -393,7 +451,7 @@ async def type_into_element(profile_name: str, selector: str, text: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-@mcp.tool()
+@secured_tool()
 async def take_screenshot(profile_name: str) -> str:
     """Capture a screenshot of the active browser window and save to disk."""
     try:

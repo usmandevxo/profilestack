@@ -7,8 +7,8 @@
   <title>API Keys - ProfileStack</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=20261003_dir2">
   <link rel="stylesheet" href="/static/css/style.css?v=20261007_v4_pipesafe">
-  <link rel="stylesheet" href="/static/css/api-keys.css?v=20261029_keys3">
-  <script src="/static/js/api-keys.js?v=20261029_keys3" defer></script>
+  <link rel="stylesheet" href="/static/css/api-keys.css?v=20261029_access2">
+  <script src="/static/js/api-keys.js?v=20261029_access2" defer></script>
 </head>
 <body class="api-keys-page">
   <div class="app-container">
@@ -43,9 +43,9 @@
       <div class="ak-content">
         <header class="ak-heading">
           <div><h1>API Keys</h1><p class="ak-muted">Manage access for your MCP clients and automation.</p></div>
-          <button type="button" class="btn btn-primary" id="ak-create">Create API key</button>
+          <button type="button" class="btn btn-primary" id="ak-create" disabled>Create API key</button>
         </header>
-        <div class="ak-notice"><strong>Full cluster access.</strong> Every key can control the entire MCP browser cluster. There are no permission scopes. Treat keys like passwords and use a separate named key for each client.</div>
+        <div class="ak-notice"><strong>Limit access to what each client needs.</strong> Choose permissions and a profile boundary for each named key. Existing keys retain their compatibility access until edited. Treat keys like passwords and use a separate named key for each client.</div>
         <dl class="ak-counts" aria-label="Named key counts">
           <div class="ak-count"><dt>Active named keys</dt><dd id="ak-active-count">—</dd></div>
           <div class="ak-count"><dt>Expired keys</dt><dd id="ak-expired-count">—</dd></div>
@@ -78,7 +78,7 @@
         <section class="ak-panel" aria-labelledby="ak-legacy-title">
           <div class="ak-panel-body">
             <div class="ak-legacy-heading"><h2 id="ak-legacy-title">Legacy server key</h2><span id="ak-legacy-status" class="ak-status">Loading…</span></div>
-            <p class="ak-muted ak-legacy-copy">Server-managed compatibility key. Its secret is never displayed here. Migrate every existing client to a named key before disabling it; clients using the legacy key will immediately lose access.</p>
+            <p class="ak-muted ak-legacy-copy">Unrestricted server-managed compatibility key, with access to all profiles and operations until disabled. Its secret is never displayed here. Migrate every existing client to a scoped named key before disabling it; clients using the legacy key will immediately lose access.</p>
             <button type="button" class="btn btn-danger" id="ak-revoke-legacy" disabled>Disable legacy key</button>
           </div>
         </section>
@@ -87,15 +87,26 @@
     </main>
   </div>
 
-  <dialog class="ak-dialog" id="ak-create-dialog" aria-labelledby="ak-create-title" aria-describedby="ak-create-description">
+  <dialog class="ak-dialog ak-access-dialog" id="ak-create-dialog" aria-labelledby="ak-create-title" aria-describedby="ak-create-description">
     <form id="ak-create-form">
       <h2 id="ak-create-title">Create API key</h2>
-      <p id="ak-create-description" class="ak-muted">This key grants full MCP cluster control. Its secret will be shown only once.</p>
+      <p id="ak-create-description" class="ak-muted">Start with read-only permissions and selected-profile access. Its secret will be shown only once.</p>
       <label for="ak-create-name">Key name</label><input class="ak-input" id="ak-create-name" name="name" required maxlength="80" autocomplete="off" placeholder="Desktop MCP client" autofocus>
       <label for="ak-expiration">Expiration</label><select class="ak-input" id="ak-expiration" name="expiration"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="never">Never expires</option></select>
       <p class="ak-muted">Choose a short lifetime when possible. Expiration cannot be extended.</p>
+      <div id="ak-create-access" class="ak-access-editor"></div>
       <p class="ak-error" id="ak-create-error" role="alert" hidden></p>
       <div class="ak-dialog-actions"><button type="button" class="btn btn-secondary" data-dismiss>Cancel</button><button type="submit" class="btn btn-primary" id="ak-create-submit">Create key</button></div>
+    </form>
+  </dialog>
+  <dialog class="ak-dialog ak-access-dialog" id="ak-access-dialog" aria-labelledby="ak-access-title" aria-describedby="ak-access-description">
+    <form id="ak-access-form">
+      <h2 id="ak-access-title" tabindex="-1" autofocus>Edit key access</h2>
+      <p id="ak-access-description" class="ak-muted">Changes apply to subsequent calls, including existing connections. Saving does not rotate the secret or reactivate a revoked key.</p>
+      <p id="ak-access-key" class="ak-key-name"></p>
+      <div id="ak-edit-access" class="ak-access-editor"></div>
+      <p class="ak-error" id="ak-access-error" role="alert" hidden></p>
+      <div class="ak-dialog-actions"><button type="button" class="btn btn-secondary" data-dismiss>Cancel</button><button type="submit" class="btn btn-primary" id="ak-access-submit">Save access</button></div>
     </form>
   </dialog>
   <dialog class="ak-dialog" id="ak-secret-dialog" aria-labelledby="ak-secret-title" aria-describedby="ak-secret-description">

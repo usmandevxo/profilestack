@@ -19,7 +19,7 @@ import app.archive_manager as am
 import app.cdp_client as cdp
 import app.folder_manager as fm
 import app.auth_manager as auth
-from app.mcp_auth import valid_mcp_key
+from app.mcp_auth import valid_mcp_key, resolve_mcp_principal, http_principal
 from app.api_key_routes import router as api_key_router, require_admin
 
 # Ensure default administrator user is initialized
@@ -42,7 +42,8 @@ mcp_sec = TransportSecuritySettings(enable_dns_rebinding_protection=False)
 
 app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 app.mount("/screenshots", StaticFiles(directory=str(SCREENSHOTS_DIR)), name="screenshots")
-app.mount("/mcp", mcp.sse_app(transport_security=mcp_sec))
+from app.mcp_transport import KeyBoundSSE
+app.mount("/mcp", KeyBoundSSE(mcp.sse_app(transport_security=mcp_sec)))
 
 templates = Jinja2Templates(directory=str(templates_path))
 app.include_router(api_key_router)
@@ -75,13 +76,19 @@ async def auth_middleware(request: Request, call_next):
     if any(part in (".", "..") for part in path.split("/")) or "\\" in path:
         return JSONResponse(status_code=400, content={"detail": "Invalid path"}, headers={"Cache-Control": "no-store"})
     if path == "/mcp" or path.startswith("/mcp/"):
-        if not valid_mcp_key(request.headers):
+        principal = resolve_mcp_principal(request.headers)
+        if principal is None:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Unauthorized"},
                 headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"},
             )
-        response = await call_next(request)
+        request.state.mcp_principal = principal
+        context_token = http_principal.set(principal)
+        try:
+            response = await call_next(request)
+        finally:
+            http_principal.reset(context_token)
         response.headers["Cache-Control"] = "no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
         return response

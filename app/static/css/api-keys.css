@@ -27,10 +27,23 @@
   --ak-layer-header: 10;
   --ak-panel-background: var(--ak-surface);
   --ak-panel-border: var(--ak-line);
+  /* Access editor: light native choices; hover/focus use existing brand tokens.
+   * Checked = tinted choice; disabled = muted; busy locks controls; errors stay
+   * inline. Groups and profile results reflow, never widening the key table. */
+  --ak-choice-background: var(--ak-background);
+  --ak-choice-selected: var(--primary-light);
+  --ak-choice-accent: var(--primary);
+  --ak-editor-width: 720px;
+  --ak-profile-list-height: 224px;
+  --ak-choice-target: 44px;
+  --ak-editor-columns: 2;
+  --ak-choice-border: var(--ak-line);
+  --ak-choice-radius: var(--ak-radius-small);
+  --ak-choice-gap: var(--ak-space-2);
   font-size: var(--ak-type-body);
 }
 .api-keys-page [hidden] { display: none !important; }
-.api-keys-page :is(button, a, input, select, textarea):focus-visible {
+.api-keys-page :is(button, a, input, select, textarea, [tabindex]):focus-visible {
   outline: 3px solid var(--primary);
   outline-offset: 3px;
 }
@@ -96,6 +109,29 @@
 .api-keys-page .ak-dialog .ak-error { margin-top: var(--ak-space-4); }
 .api-keys-page .ak-secret { resize: none; min-height: 100px; background: var(--ak-background); }
 .api-keys-page .ak-warning { color: var(--danger-hover); font-weight: 600; }
+.api-keys-page .ak-key-access { display: block; margin-top: var(--ak-space-2); color: var(--ak-muted); line-height: 1.5; }
+.api-keys-page .ak-access-dialog { width: min(var(--ak-editor-width), calc(100% - var(--ak-space-8))); }
+.api-keys-page .ak-access-editor { margin-top: var(--ak-space-6); }
+.api-keys-page .ak-editor-title { font-size: var(--ak-type-body); margin-bottom: var(--ak-space-3); }
+.api-keys-page .ak-presets, .api-keys-page .ak-scope-choices { display: flex; flex-wrap: wrap; gap: var(--ak-choice-gap); }
+.api-keys-page .ak-presets .btn[aria-pressed="true"] { background: var(--ak-choice-selected); border-color: var(--ak-choice-accent); color: var(--primary-hover); }
+.api-keys-page .ak-permission-groups { display: grid; grid-template-columns: repeat(var(--ak-editor-columns), minmax(0, 1fr)); gap: var(--ak-space-4); margin-top: var(--ak-space-4); }
+.api-keys-page .ak-access-editor fieldset { min-width: 0; padding: var(--ak-space-3); border: 1px solid var(--ak-choice-border); border-radius: var(--ak-choice-radius); }
+.api-keys-page .ak-access-editor legend { font-weight: 600; padding: 0 var(--ak-space-1); overflow-wrap: anywhere; }
+.api-keys-page .ak-dialog .ak-choice { display: flex; align-items: flex-start; gap: var(--ak-choice-gap); min-height: var(--ak-choice-target); padding: var(--ak-space-2); margin: 0; border-radius: var(--ak-choice-radius); font-weight: 400; cursor: pointer; }
+.api-keys-page .ak-choice:hover { background: var(--ak-choice-background); }
+.api-keys-page .ak-choice:has(input:checked) { background: var(--ak-choice-selected); }
+.api-keys-page .ak-choice:has(input:disabled) { color: var(--ak-muted); cursor: not-allowed; }
+.api-keys-page .ak-choice input { flex: 0 0 auto; margin-top: var(--ak-space-1); accent-color: var(--ak-choice-accent); }
+.api-keys-page .ak-choice > span { min-width: 0; overflow-wrap: anywhere; }
+.api-keys-page .ak-permission-id, .api-keys-page .ak-profile-folder { display: block; font-size: var(--ak-type-small); color: #475569; }
+.api-keys-page .ak-boundary { margin-top: var(--ak-space-6); }
+.api-keys-page .ak-profile-list { max-height: var(--ak-profile-list-height); overflow-y: auto; margin-top: var(--ak-space-3); border: 1px solid var(--ak-choice-border); border-radius: var(--ak-choice-radius); padding: var(--ak-space-1); scroll-padding: var(--ak-space-2); }
+.api-keys-page .ak-profile-list:empty { display: none; }
+@media (max-width: 599px) {
+  .api-keys-page .ak-access-editor { --ak-editor-columns: 1; }
+  .api-keys-page .ak-access-dialog { padding: var(--ak-space-4); }
+}
 @media (max-width: 1199px) and (min-width: 768px) {
   .api-keys-page .ak-table { font-size: 11px; }
   .api-keys-page .ak-table :is(th, td) { padding: var(--ak-space-3) var(--ak-space-2); }

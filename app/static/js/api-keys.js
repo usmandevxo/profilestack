@@ -1,7 +1,11 @@
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
-  const state = { keys: [], legacy: null, endpoint: '', loaded: false, loading: false, request: 0, target: null };
+  const state = { keys: [], legacy: null, endpoint: '', loaded: false, loading: false, request: 0, target: null, catalog: [], profiles: [] };
+  const readOnly = ['profiles.read', 'folders.read', 'browser.read'];
+  const operator = [...readOnly, 'profiles.create', 'profiles.update', 'lifecycle.start', 'lifecycle.stop', 'lifecycle.restart', 'browser.control'];
+  const globalPermissions = new Set(['folders.manage', 'proxies.read', 'proxies.manage', 'system.read']);
+  const editors = new Map();
   const statuses = ['active', 'expired', 'revoked'];
   const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
   let secret = '';
@@ -13,7 +17,9 @@
   function feedback(message) { $('ak-feedback').textContent = message; }
   function metadata(key) {
     return { id: key.id, name: key.name, prefix: key.prefix, status: key.status, created_at: key.created_at,
-      expires_at: key.expires_at, last_used_at: key.last_used_at, revoked_at: key.revoked_at };
+      expires_at: key.expires_at, last_used_at: key.last_used_at, revoked_at: key.revoked_at,
+      permissions: Array.isArray(key.permissions) ? [...new Set(key.permissions.filter((id) => typeof id === 'string'))] : null,
+      profile_access: key.profile_access, profiles: Array.isArray(key.profiles) ? key.profiles.filter((name) => typeof name === 'string') : [] };
   }
   function statusOf(key) {
     if (key.status === 'revoked' || key.revoked_at != null) return 'revoked';
@@ -80,13 +86,20 @@
       const identity = document.createElement('div');
       const name = document.createElement('span'); name.className = 'ak-key-name'; name.textContent = key.name;
       const prefix = document.createElement('code'); prefix.className = 'ak-key-prefix'; prefix.textContent = key.prefix;
-      identity.append(name, prefix);
+      const access = document.createElement('span'); access.className = 'ak-key-access';
+      const boundary = key.profile_access === 'all' ? 'All profiles' : key.profile_access === 'selected'
+        ? `${key.profiles.length} selected profile${key.profiles.length === 1 ? '' : 's'}` : 'Profile access unavailable';
+      access.textContent = `${key.permissions ? `${key.permissions.length} permission${key.permissions.length === 1 ? '' : 's'}` : 'Permissions unavailable'} · ${boundary}`;
+      identity.append(name, prefix, access);
       cell(row, 'Name / prefix', identity); cell(row, 'Status', badge(status));
       cell(row, 'Created', date(key.created_at, 'Unavailable'));
       cell(row, 'Expires', date(key.expires_at, 'Never'));
       cell(row, 'Last used', date(key.last_used_at, 'Never'));
       const actions = document.createElement('div'); actions.className = 'ak-actions';
       actions.append(button('Rename', 'btn-secondary', () => openRename(key), key.name));
+      const editAccess = button('Edit access', 'btn-secondary', () => openAccess(key), key.name);
+      editAccess.disabled = !state.catalog.length || !key.permissions || !['all', 'selected'].includes(key.profile_access);
+      actions.append(editAccess);
       if (status !== 'revoked') actions.append(button('Revoke', 'btn-danger', () => openRevoke(key), key.name));
       else { const note = document.createElement('span'); note.className = 'ak-muted'; note.textContent = 'Access removed'; actions.append(note); }
       cell(row, 'Actions', actions); rows.append(row);
@@ -111,11 +124,19 @@
     try {
       const data = await api();
       if (request !== state.request) return;
-      if (!Array.isArray(data.keys) || !data.legacy || typeof data.endpoint !== 'string') throw new Error('Unexpected server response. Retry loading API keys.');
+      if (!Array.isArray(data.keys) || !data.legacy || typeof data.endpoint !== 'string'
+        || !Array.isArray(data.permission_catalog) || !data.permission_catalog.length
+        || !data.permission_catalog.every((item) => typeof item.id === 'string' && typeof item.label === 'string' && typeof item.group === 'string')
+        || !Array.isArray(data.available_profiles) || !data.available_profiles.every((item) => typeof item.name === 'string')) {
+        throw new Error('Permissions or profiles could not be loaded. Retry loading API keys.');
+      }
+      state.catalog = data.permission_catalog.map(({ id, label, group }) => ({ id, label, group }));
+      state.profiles = data.available_profiles.map(({ name, folder }) => ({ name, folder: typeof folder === 'string' ? folder : '' }));
       state.keys = data.keys.map(metadata); state.legacy = metadata(data.legacy);
       const endpoint = new URL(data.endpoint, window.location.origin);
       state.endpoint = endpoint.origin === window.location.origin ? endpoint.href : new URL('/mcp/sse', window.location.origin).href;
       state.loaded = true; render();
+      $('ak-create').disabled = false;
     } catch (error) {
       if (request !== state.request) return;
       $('ak-load-error-text').textContent = `${state.loaded ? 'Showing the last loaded data. ' : ''}${errorText(error)}`;
@@ -132,6 +153,7 @@
     dialogTrigger = trigger;
     const dialog = $(id); dialog.showModal();
     const focus = dialog.querySelector('[autofocus]'); if (focus) focus.focus();
+    dialog.scrollTop = 0;
   }
   function clearSecret() {
     secretGeneration++; secret = ''; $('ak-secret').value = ''; $('ak-secret').textContent = '';
@@ -141,6 +163,104 @@
     dialog.dataset.busy = value ? 'true' : 'false'; dialog.setAttribute('aria-busy', String(value));
     dialog.querySelectorAll('button, input, select').forEach((element) => { element.disabled = value; });
     $(submitId).textContent = text;
+    if (!value) dialog.querySelectorAll('.ak-access-editor').forEach((root) => editors.get(root.id)?.sync());
+  }
+  function makeElement(tag, className, text) {
+    const element = document.createElement(tag);
+    if (className) element.className = className;
+    if (text !== undefined) element.textContent = text;
+    return element;
+  }
+  function buildEditor(id, policy) {
+    const root = $(id); root.replaceChildren();
+    const permissions = new Set(policy.permissions || []);
+    const selected = new Set(policy.profiles || []);
+    let scope = policy.profile_access === 'all' ? 'all' : 'selected';
+    const permissionInputs = new Map();
+    const presets = makeElement('div', 'ak-presets');
+    presets.setAttribute('role', 'group'); presets.setAttribute('aria-label', 'Permission presets');
+    const summary = makeElement('p', 'ak-muted'); summary.setAttribute('role', 'status');
+    const groups = makeElement('div', 'ak-permission-groups');
+    const fieldsets = new Map();
+    state.catalog.forEach((permission) => {
+      if (!fieldsets.has(permission.group)) {
+        const fieldset = makeElement('fieldset', 'ak-permission-group');
+        fieldset.append(makeElement('legend', '', permission.group)); groups.append(fieldset); fieldsets.set(permission.group, fieldset);
+      }
+      const choice = makeElement('label', 'ak-choice');
+      const input = makeElement('input'); input.type = 'checkbox'; input.value = permission.id;
+      const copy = makeElement('span'); copy.append(makeElement('span', '', permission.label), makeElement('code', 'ak-permission-id', permission.id));
+      choice.append(input, copy); fieldsets.get(permission.group).append(choice); permissionInputs.set(permission.id, input);
+      input.addEventListener('change', () => { if (input.checked) permissions.add(permission.id); else permissions.delete(permission.id); sync(); });
+    });
+    const boundary = makeElement('fieldset', 'ak-boundary'); boundary.append(makeElement('legend', '', 'Profile boundary'));
+    const scopes = makeElement('div', 'ak-scope-choices'); const scopeInputs = new Map();
+    [['all', 'All profiles'], ['selected', 'Selected profiles']].forEach(([value, text]) => {
+      const choice = makeElement('label', 'ak-choice'); const input = makeElement('input');
+      input.type = 'radio'; input.name = `${id}-scope`; input.value = value;
+      input.addEventListener('change', () => { scope = value; sync(); });
+      scopeInputs.set(value, input); choice.append(input, makeElement('span', '', text)); scopes.append(choice);
+    });
+    const globalNote = makeElement('p', 'ak-muted', 'Folder management, proxy permissions and system tools require all-profile access. Switching to selected profiles removes these permissions.');
+    globalNote.id = `${id}-global-note`;
+    globalPermissions.forEach((permission) => permissionInputs.get(permission)?.setAttribute('aria-describedby', globalNote.id));
+    const profileSection = makeElement('div', 'ak-profile-section');
+    const searchLabel = makeElement('label', '', 'Search profiles'); searchLabel.htmlFor = `${id}-search`;
+    const search = makeElement('input', 'ak-input'); search.id = searchLabel.htmlFor; search.type = 'search'; search.placeholder = 'Search by profile name or folder'; search.autocomplete = 'off';
+    const count = makeElement('p', 'ak-muted'); count.setAttribute('role', 'status');
+    const list = makeElement('div', 'ak-profile-list'); list.setAttribute('role', 'group'); list.setAttribute('aria-label', 'Profiles this key can access');
+    const available = new Map(state.profiles.map((profile) => [profile.name, profile]));
+    selected.forEach((name) => { if (!available.has(name)) available.set(name, { name, folder: 'Not currently available' }); });
+    const profileRows = [];
+    available.forEach((profile) => {
+      const choice = makeElement('label', 'ak-choice'); const input = makeElement('input'); input.type = 'checkbox'; input.checked = selected.has(profile.name);
+      input.addEventListener('change', () => { if (input.checked) selected.add(profile.name); else selected.delete(profile.name); sync(); });
+      const copy = makeElement('span'); copy.append(makeElement('span', '', profile.name));
+      if (profile.folder) copy.append(makeElement('small', 'ak-profile-folder', profile.folder));
+      choice.append(input, copy); list.append(choice); profileRows.push({ choice, text: `${profile.name} ${profile.folder}`.toLocaleLowerCase() });
+    });
+    const empty = makeElement('p', 'ak-muted');
+    function filterProfiles() {
+      const query = search.value.trim().toLocaleLowerCase(); let visible = 0;
+      profileRows.forEach(({ choice, text }) => { choice.hidden = !text.includes(query); if (!choice.hidden) visible++; });
+      empty.textContent = profileRows.length ? 'No profiles match your search.' : 'No profiles are available yet.';
+      empty.hidden = visible > 0;
+    }
+    search.addEventListener('input', filterProfiles);
+    const selectionNote = makeElement('p', 'ak-muted', 'Zero selected profiles means no access to existing profiles. Profiles created by this key are automatically assigned to it.');
+    const allNote = makeElement('p', 'ak-muted', 'Includes every current and future profile. Permissions above still limit the available operations.');
+    profileSection.append(searchLabel, search, count, list, empty, selectionNote);
+    boundary.append(scopes, allNote, profileSection);
+    const presetButtons = new Map();
+    [['Read-only', readOnly], ['Operator', operator], ['Full', state.catalog.map((item) => item.id)]].forEach(([text, ids]) => {
+      const preset = button(text, 'btn-secondary', () => {
+        permissions.clear(); ids.forEach((permission) => { if (permissionInputs.has(permission)) permissions.add(permission); });
+        if (text === 'Full') scope = 'all'; sync();
+      }, 'permission preset');
+      preset.setAttribute('aria-describedby', `${id}-preset-note`); presetButtons.set(text, { preset, ids }); presets.append(preset);
+    });
+    const presetNote = makeElement('p', 'ak-muted', 'Read-only: profile, folder and browser reads. Operator adds profile create/update, lifecycle and browser control. Full selects all permissions and all profiles; other presets keep the profile boundary.');
+    presetNote.id = `${id}-preset-note`;
+    function sync() {
+      const isBusy = root.closest('dialog').dataset.busy === 'true';
+      if (scope === 'selected') globalPermissions.forEach((permission) => permissions.delete(permission));
+      permissionInputs.forEach((input, permission) => {
+        input.checked = permissions.has(permission); input.disabled = isBusy || (scope === 'selected' && globalPermissions.has(permission));
+      });
+      scopeInputs.forEach((input, value) => { input.checked = scope === value; });
+      presetButtons.forEach(({ preset, ids }, text) => preset.setAttribute('aria-pressed', String(ids.length === permissions.size && ids.every((permission) => permissions.has(permission)) && (text !== 'Full' || scope === 'all'))));
+      profileSection.hidden = scope !== 'selected'; allNote.hidden = scope !== 'all';
+      summary.textContent = `${permissions.size} permission${permissions.size === 1 ? '' : 's'} selected${permissions.size ? '' : ' — this key cannot call any operations'}.`;
+      count.textContent = `${selected.size} profile${selected.size === 1 ? '' : 's'} selected.`;
+      filterProfiles();
+    }
+    root.append(makeElement('h3', 'ak-editor-title', 'Permissions'), presets, presetNote, summary, groups, globalNote, boundary);
+    const editor = { sync, value: () => ({ permissions: [...permissions], profile_access: scope, profiles: scope === 'selected' ? [...selected] : [] }) };
+    editors.set(id, editor); sync(); return editor;
+  }
+  function openAccess(key) {
+    state.target = metadata(key); showError('ak-access-error'); $('ak-access-key').textContent = key.name;
+    buildEditor('ak-edit-access', key); openDialog('ak-access-dialog');
   }
   function openRename(key) {
     state.target = metadata(key); showError('ak-rename-error'); $('ak-rename-name').value = key.name;
@@ -152,7 +272,7 @@
     $('ak-revoke-title').textContent = legacy ? 'Disable legacy server key?' : 'Revoke API key?';
     $('ak-revoke-description').textContent = legacy
       ? 'Disable the legacy server key only after migrating all existing clients to named keys. Any client still using it will stop working.'
-      : `Revoke “${key.name}”? This removes its full MCP cluster access. The key’s metadata will remain visible.`;
+      : `Revoke “${key.name}”? This removes all access granted to this key. The key’s metadata will remain visible.`;
     $('ak-revoke-submit').textContent = legacy ? 'Disable legacy key' : 'Revoke key';
     openDialog('ak-revoke-dialog');
   }
@@ -165,10 +285,10 @@
   document.querySelectorAll('.ak-dialog').forEach((dialog) => {
     dialog.addEventListener('keydown', (event) => {
       if (event.key !== 'Tab') return;
-      const controls = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')];
+      const controls = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')].filter((element) => element.getClientRects().length > 0);
       const first = controls[0], last = controls[controls.length - 1];
       if (!first) { event.preventDefault(); return; }
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === $('ak-access-title'))) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     });
     dialog.querySelectorAll('[data-dismiss]').forEach((element) => element.addEventListener('click', () => {
@@ -183,22 +303,26 @@
     dialog.addEventListener('close', () => {
       if (dialog.id === 'ak-secret-dialog') clearSecret();
       if (dialog.id === 'ak-create-dialog') { $('ak-create-form').reset(); $('ak-create-name').setCustomValidity(''); }
-      if (dialog.id === 'ak-rename-dialog' || dialog.id === 'ak-revoke-dialog') state.target = null;
+      if (['ak-rename-dialog', 'ak-revoke-dialog', 'ak-access-dialog'].includes(dialog.id)) state.target = null;
       if (!document.querySelector('dialog[open]')) {
         if (dialogTrigger?.isConnected) dialogTrigger.focus(); else $('ak-create').focus();
       }
     });
   });
-  $('ak-create').addEventListener('click', () => { showError('ak-create-error'); openDialog('ak-create-dialog'); });
+  $('ak-create').addEventListener('click', () => {
+    if (!state.loaded) return;
+    showError('ak-create-error'); buildEditor('ak-create-access', { permissions: readOnly, profile_access: 'selected', profiles: [] }); openDialog('ak-create-dialog');
+  });
   $('ak-refresh').addEventListener('click', loadKeys); $('ak-retry').addEventListener('click', loadKeys);
   $('ak-revoke-legacy').addEventListener('click', () => { if (state.legacy?.status === 'active') openRevoke(state.legacy); });
   $('ak-create-form').addEventListener('submit', async (event) => {
     event.preventDefault(); const dialog = $('ak-create-dialog'); if (dialog.dataset.busy === 'true') return;
     const name = readName('ak-create-name'); if (!name) return;
     const expiration = $('ak-expiration').value;
+    const policy = editors.get('ak-create-access').value();
     showError('ak-create-error'); busy(dialog, true, 'ak-create-submit', 'Creating…');
     try {
-      const data = await api('', 'POST', { name, expires_in_days: expiration === 'never' ? null : Number(expiration) });
+      const data = await api('', 'POST', { name, expires_in_days: expiration === 'never' ? null : Number(expiration), ...policy });
       if (!data.key || typeof data.secret !== 'string' || !data.secret) throw new Error('The key may have been created, but its secret was not received. Refresh the list and revoke the key before creating a replacement.');
       state.keys = [metadata(data.key), ...state.keys.filter((key) => key.id !== data.key.id)];
       if (state.loaded) render();
@@ -207,6 +331,18 @@
       await loadKeys();
     } catch (error) { showError('ak-create-error', errorText(error)); }
     finally { busy(dialog, false, 'ak-create-submit', 'Create key'); }
+  });
+  $('ak-access-form').addEventListener('submit', async (event) => {
+    event.preventDefault(); const dialog = $('ak-access-dialog'); if (dialog.dataset.busy === 'true' || !state.target) return;
+    const id = state.target.id; const policy = editors.get('ak-edit-access').value();
+    showError('ak-access-error'); busy(dialog, true, 'ak-access-submit', 'Saving…');
+    try {
+      const data = await api(`/${encodeURIComponent(id)}/permissions`, 'PATCH', policy);
+      if (!data.key || !Array.isArray(data.key.permissions)) throw new Error('Access could not be confirmed. Refresh the list before retrying.');
+      state.keys = state.keys.map((key) => key.id === id ? metadata(data.key) : key);
+      render(); dialog.close(); feedback('API key access updated for subsequent calls. Its secret and revocation status are unchanged.'); await loadKeys();
+    } catch (error) { showError('ak-access-error', errorText(error)); }
+    finally { busy(dialog, false, 'ak-access-submit', 'Save access'); }
   });
   $('ak-rename-form').addEventListener('submit', async (event) => {
     event.preventDefault(); const dialog = $('ak-rename-dialog'); if (dialog.dataset.busy === 'true' || !state.target) return;

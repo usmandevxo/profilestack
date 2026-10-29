@@ -25,6 +25,23 @@ class APIKeyRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 201)
         self.assertTrue(response.json()["secret"].startswith("psk_"))
 
+    async def test_admin_policy_editor_and_secure_defaults(self):
+        with patch("app.auth_manager.validate_session", return_value={"username": "admin"}), patch("app.auth_manager.load_users", return_value={"admin": {"role": "admin"}}), patch("app.api_key_routes.pm.list_profiles", return_value=[{'name':'alpha','folder':'default'}]):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://testserver", headers={"Cookie":"ps_session=test", "X-ProfileStack-Management":"1"}) as client:
+                created = (await client.post('/api/api-keys', json={'name':'Restricted'})).json()
+                self.assertEqual(created['key']['profile_access'], 'selected')
+                self.assertEqual(created['key']['profiles'], [])
+                self.assertNotIn('profiles.create', created['key']['permissions'])
+                path = '/api/api-keys/' + created['key']['id'] + '/permissions'
+                policy = {'permissions':['profiles.read','profiles.create'], 'profile_access':'selected', 'profiles':['alpha']}
+                edited = await client.patch(path, json=policy)
+                self.assertEqual(edited.status_code, 200)
+                self.assertEqual(edited.json()['key']['profiles'], ['alpha'])
+                self.assertEqual((await client.get('/api/api-keys')).json()['keys'][0]['permissions'], sorted(policy['permissions']))
+                for change in ({'permissions':['unknown']}, {'permissions':['system.read']}, {'profiles':['missing']}):
+                    self.assertEqual((await client.patch(path,json={**policy,**change})).status_code,422)
+                self.assertEqual((await client.patch(path,json=policy,headers={'X-API-Key':created['secret']})).status_code,403)
+
     async def test_created_key_authorizes_mcp_and_revocation_is_immediate(self):
         from app import api_key_store as store
         result = store.create_key("Client", 30)
@@ -79,6 +96,10 @@ class APIKeyRouteTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await client.get("/api/api-keys")).status_code, 401)
             with patch("app.auth_manager.validate_session", return_value={"username": "viewer"}), patch("app.auth_manager.load_users", return_value={"viewer": {"role": "viewer"}}):
                 self.assertEqual((await client.get("/api/api-keys", headers={"Cookie": "ps_session=test"})).status_code, 403)
+            with patch("app.auth_manager.validate_session", return_value={"username": "Admin"}), patch("app.auth_manager.load_users", return_value={"admin": {"role": "admin"}}):
+                self.assertEqual((await client.get("/api/api-keys", headers={"Cookie": "ps_session=test"})).status_code, 200)
+            with patch("app.auth_manager.validate_session", return_value={"username": "Usmandevx"}), patch("app.auth_manager.load_users", return_value={"admin": {"role": "admin"}}):
+                self.assertEqual((await client.get("/api/api-keys", headers={"Cookie": "ps_session=test"})).status_code, 200)
             with patch("app.auth_manager.validate_session", return_value={"username": "admin"}), patch("app.auth_manager.load_users", return_value={"admin": {"role": "admin"}}):
                 self.assertEqual((await client.get("/api/api-keys", headers={"Cookie": "ps_session=test", "Origin": "https://evil.example"})).status_code, 403)
                 body = {"name": "Client", "expires_in_days": 30}

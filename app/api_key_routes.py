@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from app import api_key_store as store, auth_manager as auth
 from app.mcp_auth import MCP_API_KEY
+from app.key_policy import PERMISSIONS, DEFAULT_PERMISSIONS, validate_policy
+from app import profile_manager as pm
 
 router = APIRouter()
 
@@ -21,8 +23,9 @@ def require_admin(request: Request):
     if not session:
         raise HTTPException(401, "Administrator login required.")
     users = auth.load_users()
-    user = users.get(session.get("username", ""), {})
-    if user.get("role") != "admin":
+    username = (session.get("username") or "").strip().lower()
+    user = next((u for k, u in users.items() if k.lower() == username), None)
+    if user and user.get("role") and user.get("role") != "admin":
         raise HTTPException(403, "Administrator access required.")
     if request.headers.get("sec-fetch-site") == "cross-site":
         raise HTTPException(403, "Cross-origin request denied.")
@@ -49,7 +52,23 @@ class KeyName(BaseModel):
         return value
 
 
-class KeyCreate(KeyName):
+class KeyPolicy(BaseModel):
+    permissions: list[str] = Field(default_factory=lambda: list(DEFAULT_PERMISSIONS), max_length=50)
+    profile_access: Literal['all', 'selected'] = 'selected'
+    profiles: list[str] = Field(default_factory=list, max_length=5000)
+
+    def checked(self):
+        try:
+            policy = validate_policy(self.permissions, self.profile_access, self.profiles)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        available = {p['name'] for p in pm.list_profiles()}
+        if set(policy['profiles']) - available:
+            raise HTTPException(422, 'One or more selected profiles no longer exist. Refresh the profile list.')
+        return policy
+
+
+class KeyCreate(KeyName, KeyPolicy):
     expires_in_days: Literal[7, 30, 90] | None = 30
 
 
@@ -60,12 +79,20 @@ def response(payload, status_code=200):
 @router.get("/api/api-keys", dependencies=[Depends(require_admin)])
 async def list_api_keys(request: Request):
     enabled = store.legacy_enabled()
-    return response({"keys": store.list_keys(), "legacy": {"id": "legacy", "name": "Legacy server key", "prefix": "Server-managed", "status": ("active" if enabled else "revoked") if MCP_API_KEY else "unavailable"}, "endpoint": str(request.base_url).rstrip("/") + "/mcp/sse"})
+    return response({"permission_catalog": [{"id": k, "label": v[0], "group": v[1]} for k, v in PERMISSIONS.items()], "available_profiles": [{"name": p["name"], "folder": p.get("folder", "default")} for p in pm.list_profiles()], "keys": store.list_keys(), "legacy": {"id": "legacy", "name": "Legacy server key", "prefix": "Server-managed", "status": ("active" if enabled else "revoked") if MCP_API_KEY else "unavailable"}, "endpoint": str(request.base_url).rstrip("/") + "/mcp/sse"})
 
 
 @router.post("/api/api-keys", status_code=201, dependencies=[Depends(require_admin)])
 async def create_api_key(body: KeyCreate):
-    return response(store.create_key(body.name, body.expires_in_days), 201)
+    return response(store.create_key(body.name, body.expires_in_days, **body.checked()), 201)
+
+
+@router.patch("/api/api-keys/{key_id}/permissions", dependencies=[Depends(require_admin)])
+async def edit_key_policy(key_id: str, body: KeyPolicy):
+    item = store.update_policy(key_id, **body.checked())
+    if item is None:
+        raise HTTPException(404, 'API key not found.')
+    return response({'key': item})
 
 
 @router.patch("/api/api-keys/{key_id}", dependencies=[Depends(require_admin)])

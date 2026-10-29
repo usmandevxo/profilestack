@@ -23,9 +23,38 @@ Open `/api-keys` from **API Keys** in the sidebar while signed in as an administ
 - Rename keys, view creation/expiration/last-used timestamps, and revoke individual clients without restarting the service.
 - Managed keys are cryptographically random; only SHA-256 digests and metadata are stored in `data/api-keys.sqlite3` (mode `0600`, excluded from Git).
 - Management requires an administrator web-session cookie, same-origin requests, and a mutation-specific header. MCP keys cannot create or revoke other keys.
-- All keys currently grant full MCP cluster control; granular permission scopes are not implemented.
+- Named keys carry explicit action permissions and either all-profile access or a selected-profile allowlist. New keys default to read-only permissions with zero selected profiles (no existing-profile access). Existing named keys migrate to full compatibility access, so review them in **Edit access**.
+- The legacy server key remains unrestricted until disabled; it cannot be assigned a granular policy.
 - The original file/environment key appears as **Legacy server key**. Migrate existing clients first, then disable it from the page. Disabling is persistent and does not reveal or delete its original secret file.
 - Revocation and expiry reject subsequent authenticated requests immediately, including MCP message POSTs. Already-executing tool calls cannot be undone.
+
+## Per-key permissions and profile boundary
+
+Create a key or choose **Edit access** to configure:
+
+| Permission | Operations |
+| --- | --- |
+| `profiles.read` | List and inspect accessible profiles |
+| `profiles.create` | Create new profiles |
+| `profiles.update` | Edit profile settings and move profiles |
+| `profiles.delete` | Delete profiles and their stored browser data |
+| `lifecycle.start`, `lifecycle.stop`, `lifecycle.restart` | Independently allow each lifecycle action |
+| `browser.read` | Read pages and capture screenshots |
+| `browser.control` | Navigate, click, type, execute browser JavaScript |
+| `folders.read` | View accessible folders and scoped counts |
+| `folders.manage` | Global folder creation/edit/deletion |
+| `proxies.read`, `proxies.manage` | Global proxy catalog access, mutation/testing |
+| `system.read` | Global host telemetry |
+
+**All profiles** includes current and future profiles, but does not imply every action permission. **Selected profiles** allows only the checked profile names. Empty selection grants no existing-profile access. A profile successfully created by a selected-scope key is automatically added to that key's allowlist. Creation does not implicitly grant read, lifecycle, or browser permissions. Global folder management, proxy access and host telemetry require all-profile scope; selected-scope policies cannot grant them.
+
+Presets: **Read-only** selects profile/folder/browser reads; **Operator** additionally selects creation, profile edits, lifecycle and browser control (not deletion); **Full** explicitly selects every permission and all profiles. Admin changes preserve the secret. Revoked/expired keys do not reactivate when their policy is edited.
+
+MCP dispatch checks both action permission and target profile before executing. Tool discovery is filtered, but manually calling a hidden tool is also denied. Profile lists and folder counts are scoped. Remote profile results omit raw CDP/VNC ports, proxy configuration and host file paths to avoid bypassing operation permissions. Direct raw browser transports are not authorized by these keys. Administrator web sessions remain separate and retain their own dashboard authority.
+
+Each SSE connection is bound to its opening key. Message POSTs with a different valid key receive a generic `404`, and missing/invalid keys receive `401`. Permissions, revocation and expiry refresh on subsequent messages, including existing SSE connections; no restart/reconnect is needed for policy edits. In-flight operations cannot be undone. Local stdio remains trusted OS-local access, not a per-key remote session.
+
+These policies govern the MCP/API boundary, not hostile-browser network confinement. Browser-control permission is powerful; do not grant it to an untrusted agent as if it were read-only. Network sandboxing and separately exposed CDP/shell access must be handled independently.
 
 ## MCP separation from key administration
 
@@ -80,6 +109,7 @@ From the project root:
 ```sh
 env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -v
 env -u PYTHONPATH .venv/bin/python scripts/verify_mcp_security.py
+env -u PYTHONPATH .venv/bin/python scripts/verify_key_permissions.py
 ```
 
 The live verification performs read-only MCP initialization and tool discovery for both supported headers, checks unauthenticated request methods and private-file guards, and checks VNC authorization. It never prints the real key or user profile contents.
