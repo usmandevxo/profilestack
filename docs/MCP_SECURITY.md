@@ -14,7 +14,20 @@ X-API-Key: YOUR_API_KEY
 
 Missing, invalid, duplicate, or ambiguous credentials return `401` with a generic `{"detail":"Unauthorized"}` response. Keys in query parameters are not accepted. Never put credentials in URLs, source files, screenshots, issue reports, or chat.
 
-## Server configuration
+## Dashboard key management
+
+Open `/api-keys` from **API Keys** in the sidebar while signed in as an administrator.
+
+- Create separately named client keys with 7-, 30-, or 90-day expiration, or no expiry.
+- Copy the secret once at creation. Closing the dialog clears it; it cannot be retrieved later.
+- Rename keys, view creation/expiration/last-used timestamps, and revoke individual clients without restarting the service.
+- Managed keys are cryptographically random; only SHA-256 digests and metadata are stored in `data/api-keys.sqlite3` (mode `0600`, excluded from Git).
+- Management requires an administrator web-session cookie, same-origin requests, and a mutation-specific header. MCP keys cannot create or revoke other keys.
+- All keys currently grant full MCP cluster control; granular permission scopes are not implemented.
+- The original file/environment key appears as **Legacy server key**. Migrate existing clients first, then disable it from the page. Disabling is persistent and does not reveal or delete its original secret file.
+- Revocation and expiry reject subsequent authenticated requests immediately, including MCP message POSTs. Already-executing tool calls cannot be undone.
+
+## Legacy server configuration
 
 Configuration precedence:
 

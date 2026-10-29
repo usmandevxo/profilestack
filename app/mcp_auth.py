@@ -1,6 +1,7 @@
 """Fail-closed, header-only authentication for remote MCP transports."""
 import hmac
 import os
+import sqlite3
 from pathlib import Path
 
 from app.config import DATA_DIR
@@ -22,8 +23,6 @@ MCP_API_KEY = _load_key()
 
 
 def valid_mcp_key(headers) -> bool:
-    if not MCP_API_KEY:
-        return False
     authorization = headers.getlist("authorization")
     api_keys = headers.getlist("x-api-key")
     # Ambiguous credentials are rejected, rather than selecting one silently.
@@ -38,4 +37,11 @@ def valid_mcp_key(headers) -> bool:
         candidate = api_keys[0]
     if not candidate or not candidate.isascii():
         return False
-    return hmac.compare_digest(candidate, MCP_API_KEY)
+    from app import api_key_store as store
+    try:
+        if candidate.startswith("psk_"):
+            return store.validate_key(candidate)
+        return bool(MCP_API_KEY) and hmac.compare_digest(candidate, MCP_API_KEY) and store.legacy_enabled()
+    except (OSError, sqlite3.Error):
+        # Storage failures never downgrade authentication to public access.
+        return False

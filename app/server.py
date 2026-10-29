@@ -20,6 +20,7 @@ import app.cdp_client as cdp
 import app.folder_manager as fm
 import app.auth_manager as auth
 from app.mcp_auth import valid_mcp_key
+from app.api_key_routes import router as api_key_router, require_admin
 
 # Ensure default administrator user is initialized
 auth.init_default_user()
@@ -44,6 +45,16 @@ app.mount("/screenshots", StaticFiles(directory=str(SCREENSHOTS_DIR)), name="scr
 app.mount("/mcp", mcp.sse_app(transport_security=mcp_sec))
 
 templates = Jinja2Templates(directory=str(templates_path))
+app.include_router(api_key_router)
+
+
+@app.get("/api-keys", response_class=HTMLResponse)
+async def api_keys_page(request: Request):
+    user = require_admin(request)
+    response = templates.TemplateResponse(request=request, name="api_keys.html", context={"user": user})
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 PUBLIC_PREFIXES = (
     "/login",

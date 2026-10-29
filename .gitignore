@@ -20,6 +20,10 @@ data/.empty
 .env
 .env.*
 data/mcp-api-key
+data/*.sqlite3*
+
+# Local UI inspection evidence
+.design/
 
 # Logs & Temporary Files
 *.log

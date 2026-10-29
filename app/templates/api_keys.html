@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="same-origin">
+  <title>API Keys - ProfileStack</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=20261003_dir2">
+  <link rel="stylesheet" href="/static/css/style.css?v=20261007_v4_pipesafe">
+  <link rel="stylesheet" href="/static/css/api-keys.css?v=20261029_keys3">
+  <script src="/static/js/api-keys.js?v=20261029_keys3" defer></script>
+</head>
+<body class="api-keys-page">
+  <div class="app-container">
+    <aside class="sidebar" aria-label="Application navigation">
+      <div class="sidebar-header">
+        <a class="ak-logo" href="/" aria-label="ProfileStack home">
+          <img src="/static/img/logo.svg" alt="" width="36" height="36">
+          <span><span class="ak-brand">ProfileStack</span><span class="ak-subbrand">Browser Cluster</span></span>
+        </a>
+      </div>
+      <nav class="sidebar-nav" aria-label="Main">
+        <span class="nav-label">Workspace</span>
+        <a class="nav-link" href="/">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          Browser Profiles
+        </a>
+        <span class="nav-label">Tools</span>
+        <a class="nav-link active" href="/api-keys" aria-current="page">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="9" r="5"/><path d="m12 12 9 9m-5-5 3-3m-6 0 3-3"/></svg>
+          API Keys
+        </a>
+        <a class="nav-link" href="/api/docs">API Documentation</a>
+        <a class="nav-link" href="/logout">Sign Out</a>
+      </nav>
+      <div class="sidebar-footer">
+        <span class="ak-user">{{ user.username if user and user.username else 'Administrator' }}</span>
+        <span class="ak-muted">Cluster administration</span>
+      </div>
+    </aside>
+    <main class="main-content" id="main-content">
+      <div class="ak-topbar">Cluster <span aria-hidden="true"> / </span> <strong>API Keys</strong></div>
+      <div class="ak-content">
+        <header class="ak-heading">
+          <div><h1>API Keys</h1><p class="ak-muted">Manage access for your MCP clients and automation.</p></div>
+          <button type="button" class="btn btn-primary" id="ak-create">Create API key</button>
+        </header>
+        <div class="ak-notice"><strong>Full cluster access.</strong> Every key can control the entire MCP browser cluster. There are no permission scopes. Treat keys like passwords and use a separate named key for each client.</div>
+        <dl class="ak-counts" aria-label="Named key counts">
+          <div class="ak-count"><dt>Active named keys</dt><dd id="ak-active-count">—</dd></div>
+          <div class="ak-count"><dt>Expired keys</dt><dd id="ak-expired-count">—</dd></div>
+          <div class="ak-count"><dt>Revoked keys</dt><dd id="ak-revoked-count">—</dd></div>
+        </dl>
+        <p id="ak-feedback" class="ak-feedback" role="status" aria-live="polite"></p>
+        <div id="ak-load-error" class="ak-error" role="alert" hidden><p id="ak-load-error-text"></p><button type="button" class="btn btn-secondary" id="ak-retry">Retry loading</button></div>
+        <section class="ak-panel" aria-labelledby="ak-list-title" id="ak-list" aria-busy="true">
+          <header class="ak-section-heading">
+            <div><h2 id="ak-list-title">Named keys</h2><p class="ak-muted">Secrets are never shown here. Revoked keys remain for your records.</p></div>
+            <button type="button" class="btn btn-secondary" id="ak-refresh">Refresh</button>
+          </header>
+          <p class="ak-state" id="ak-loading" role="status">Loading API keys…</p>
+          <div class="ak-state" id="ak-empty" hidden><strong>No API keys yet</strong><p>Create a named key to connect your first MCP client.</p></div>
+          <table class="ak-table" id="ak-table" hidden>
+            <caption class="ak-state" hidden>Named API keys and their access status</caption>
+            <thead><tr><th scope="col">Name / prefix</th><th scope="col">Status</th><th scope="col">Created</th><th scope="col">Expires</th><th scope="col">Last used</th><th scope="col">Actions</th></tr></thead>
+            <tbody id="ak-rows"></tbody>
+          </table>
+        </section>
+        <section class="ak-panel" aria-labelledby="ak-connect-title">
+          <header class="ak-section-heading"><div><h2 id="ak-connect-title">Connect an MCP client</h2><p class="ak-muted">Use the SSE endpoint and a bearer token in your client configuration.</p></div></header>
+          <div class="ak-panel-body">
+            <strong>SSE endpoint</strong>
+            <div class="ak-connection"><code class="ak-endpoint" id="ak-endpoint">Loading endpoint…</code><button type="button" class="btn btn-secondary" id="ak-copy-endpoint" disabled>Copy endpoint</button></div>
+            <ol class="ak-steps"><li>Create a key with a name you recognize, such as “Desktop MCP client”.</li><li>Save the secret when it appears. You cannot retrieve it later.</li><li>Set your client’s server URL to the endpoint above, with the header <code>Authorization: Bearer YOUR_API_KEY</code>. Replace the placeholder with your secret, not its prefix.</li></ol>
+            <p class="ak-muted ak-legacy-copy">Keep secrets out of URLs, shared configuration files, and logs. See <a href="/api/docs">API documentation</a> for the available operations.</p>
+          </div>
+        </section>
+        <section class="ak-panel" aria-labelledby="ak-legacy-title">
+          <div class="ak-panel-body">
+            <div class="ak-legacy-heading"><h2 id="ak-legacy-title">Legacy server key</h2><span id="ak-legacy-status" class="ak-status">Loading…</span></div>
+            <p class="ak-muted ak-legacy-copy">Server-managed compatibility key. Its secret is never displayed here. Migrate every existing client to a named key before disabling it; clients using the legacy key will immediately lose access.</p>
+            <button type="button" class="btn btn-danger" id="ak-revoke-legacy" disabled>Disable legacy key</button>
+          </div>
+        </section>
+        <noscript><p class="ak-error">JavaScript is required to manage API keys. Enable it and reload this page.</p></noscript>
+      </div>
+    </main>
+  </div>
+
+  <dialog class="ak-dialog" id="ak-create-dialog" aria-labelledby="ak-create-title" aria-describedby="ak-create-description">
+    <form id="ak-create-form">
+      <h2 id="ak-create-title">Create API key</h2>
+      <p id="ak-create-description" class="ak-muted">This key grants full MCP cluster control. Its secret will be shown only once.</p>
+      <label for="ak-create-name">Key name</label><input class="ak-input" id="ak-create-name" name="name" required maxlength="80" autocomplete="off" placeholder="Desktop MCP client" autofocus>
+      <label for="ak-expiration">Expiration</label><select class="ak-input" id="ak-expiration" name="expiration"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="never">Never expires</option></select>
+      <p class="ak-muted">Choose a short lifetime when possible. Expiration cannot be extended.</p>
+      <p class="ak-error" id="ak-create-error" role="alert" hidden></p>
+      <div class="ak-dialog-actions"><button type="button" class="btn btn-secondary" data-dismiss>Cancel</button><button type="submit" class="btn btn-primary" id="ak-create-submit">Create key</button></div>
+    </form>
+  </dialog>
+  <dialog class="ak-dialog" id="ak-secret-dialog" aria-labelledby="ak-secret-title" aria-describedby="ak-secret-description">
+    <h2 id="ak-secret-title">Save your API key</h2>
+    <p id="ak-secret-description" class="ak-warning">Copy this secret now. After you close this dialog, it cannot be shown again.</p>
+    <label for="ak-secret">Your new secret</label><textarea class="ak-input ak-secret" id="ak-secret" readonly spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="ak-secret-description"></textarea>
+    <p id="ak-copy-status" role="status" aria-live="polite"></p>
+    <div class="ak-dialog-actions"><button type="button" class="btn btn-secondary" id="ak-copy-secret" autofocus>Copy secret</button><button type="button" class="btn btn-primary" data-dismiss>I’ve saved my key</button></div>
+  </dialog>
+  <dialog class="ak-dialog" id="ak-rename-dialog" aria-labelledby="ak-rename-title" aria-describedby="ak-rename-description">
+    <form id="ak-rename-form">
+      <h2 id="ak-rename-title">Rename API key</h2><p id="ak-rename-description" class="ak-muted">Changing the name does not change the secret or its permissions.</p>
+      <label for="ak-rename-name">Key name</label><input class="ak-input" id="ak-rename-name" name="name" required maxlength="80" autocomplete="off" autofocus>
+      <p class="ak-error" id="ak-rename-error" role="alert" hidden></p>
+      <div class="ak-dialog-actions"><button type="button" class="btn btn-secondary" data-dismiss>Cancel</button><button type="submit" class="btn btn-primary" id="ak-rename-submit">Save name</button></div>
+    </form>
+  </dialog>
+  <dialog class="ak-dialog" id="ak-revoke-dialog" aria-labelledby="ak-revoke-title" aria-describedby="ak-revoke-description">
+    <form id="ak-revoke-form">
+      <h2 id="ak-revoke-title">Revoke API key?</h2><p id="ak-revoke-description"></p><p class="ak-warning">This cannot be undone. Affected clients will immediately lose access.</p>
+      <p class="ak-error" id="ak-revoke-error" role="alert" hidden></p>
+      <div class="ak-dialog-actions"><button type="button" class="btn btn-secondary" data-dismiss autofocus>Cancel</button><button type="submit" class="btn btn-danger" id="ak-revoke-submit">Revoke key</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

@@ -1,6 +1,8 @@
 """Regression tests: remote MCP must never rely on browser login or public access."""
 import asyncio
 import os
+import tempfile
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -13,12 +15,20 @@ with patch.dict(os.environ, {"PROFILESTACK_MCP_API_KEY": TEST_KEY}):
 
 class MCPSecurityTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR"))
+        self.db_patch = patch("app.api_key_store.DB_PATH", Path(self.temp.name) / "keys.sqlite3")
+        self.key_patch = patch("app.mcp_auth.MCP_API_KEY", TEST_KEY)
+        self.db_patch.start()
+        self.key_patch.start()
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="https://testserver"
         )
 
     async def asyncTearDown(self):
         await self.client.aclose()
+        self.key_patch.stop()
+        self.db_patch.stop()
+        self.temp.cleanup()
 
     async def test_missing_key_rejects_message_transport(self):
         response = await asyncio.wait_for(self.client.post(

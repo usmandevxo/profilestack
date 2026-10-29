@@ -1,0 +1,127 @@
+/* API Keys extends DESIGN.md and style.css; no global overrides.
+ * Tokens: existing brand primitives → page semantics → component aliases.
+ * State contract: buttons use hover/active/focus/disabled; panels expose loading,
+ * empty/error/ready; dialogs expose idle/submitting/error/success. Status is text,
+ * never color alone. Motion is optional and reduced-motion removes transitions.
+ */
+.api-keys-page {
+  --ak-surface: var(--bg-card);
+  --ak-background: var(--bg-main);
+  --ak-ink: var(--text-main);
+  --ak-muted: var(--text-muted);
+  --ak-line: var(--border);
+  --ak-space-1: 4px;
+  --ak-space-2: 8px;
+  --ak-space-3: 12px;
+  --ak-space-4: 16px;
+  --ak-space-6: 24px;
+  --ak-space-8: 32px;
+  --ak-type-small: 12px;
+  --ak-type-body: 14px;
+  --ak-type-title: 28px;
+  --ak-radius-small: 6px;
+  --ak-radius-panel: 12px;
+  --ak-elevation-dialog: 0 24px 64px rgb(15 23 42 / 18%);
+  --ak-backdrop: rgb(15 23 42 / 40%);
+  --ak-motion: 150ms ease;
+  --ak-layer-header: 10;
+  --ak-panel-background: var(--ak-surface);
+  --ak-panel-border: var(--ak-line);
+  font-size: var(--ak-type-body);
+}
+.api-keys-page [hidden] { display: none !important; }
+.api-keys-page :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 3px;
+}
+.api-keys-page .btn { min-height: 44px; justify-content: center; }
+.api-keys-page .btn-danger { color: var(--danger-hover); background: var(--danger-light); border-color: var(--danger); }
+.api-keys-page .btn-danger:hover:not(:disabled) { color: #ffffff; background: var(--danger-hover); }
+.api-keys-page .btn:active:not(:disabled) { transform: translateY(1px); }
+.api-keys-page button:disabled { opacity: .55; cursor: not-allowed; }
+.api-keys-page .nav-link { min-height: 40px; }
+.api-keys-page .app-container { flex-direction: row; }
+.api-keys-page .sidebar { position: sticky; transform: none; z-index: auto; box-shadow: none; }
+.api-keys-page .ak-logo { display: flex; gap: var(--ak-space-3); align-items: center; text-decoration: none; color: var(--ak-ink); }
+.api-keys-page .ak-brand { display: block; font-size: 16px; font-weight: 700; }
+.api-keys-page .ak-subbrand { display: block; font-size: 11px; color: var(--ak-muted); text-transform: uppercase; letter-spacing: .05em; }
+.api-keys-page .ak-user { overflow-wrap: anywhere; color: var(--ak-muted); font-size: var(--ak-type-small); }
+.api-keys-page .ak-topbar { min-height: 60px; padding: var(--ak-space-4) var(--ak-space-8); border-bottom: 1px solid var(--ak-line); background: var(--ak-surface); color: var(--ak-muted); }
+.api-keys-page .ak-content { width: 100%; max-width: 1600px; padding: var(--ak-space-8); margin: 0 auto; }
+.api-keys-page .ak-heading, .api-keys-page .ak-section-heading, .api-keys-page .ak-legacy-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--ak-space-4); flex-wrap: wrap; }
+.api-keys-page h1 { font-size: var(--ak-type-title); letter-spacing: -.03em; line-height: 1.2; margin-bottom: var(--ak-space-2); }
+.api-keys-page h2, .api-keys-page dialog h2 { font-size: 18px; line-height: 1.4; }
+.api-keys-page p { overflow-wrap: anywhere; }
+.api-keys-page .ak-muted { color: var(--ak-muted); }
+.api-keys-page .ak-notice { margin-top: var(--ak-space-6); padding: var(--ak-space-4); border: 1px solid var(--ak-line); border-radius: var(--ak-radius-small); background: var(--primary-light); }
+.api-keys-page .ak-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ak-space-4); margin: var(--ak-space-6) 0; }
+.api-keys-page .ak-count { padding: var(--ak-space-4) var(--ak-space-6); border: 1px solid var(--ak-panel-border); border-radius: var(--ak-radius-panel); background: var(--ak-panel-background); }
+.api-keys-page .ak-count dt { color: var(--ak-muted); font-size: var(--ak-type-small); }
+.api-keys-page .ak-count dd { font-size: var(--ak-type-title); font-weight: 700; font-variant-numeric: tabular-nums; }
+.api-keys-page .ak-panel { border: 1px solid var(--ak-panel-border); border-radius: var(--ak-radius-panel); background: var(--ak-panel-background); margin-bottom: var(--ak-space-6); overflow: hidden; }
+.api-keys-page .ak-section-heading, .api-keys-page .ak-panel-body { padding: var(--ak-space-6); }
+.api-keys-page .ak-section-heading { border-bottom: 1px solid var(--ak-line); }
+.api-keys-page .ak-section-heading p { margin-top: var(--ak-space-1); }
+.api-keys-page .ak-table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; font-size: var(--ak-type-small); }
+.api-keys-page .ak-table th { color: var(--ak-muted); font-weight: 500; background: var(--ak-background); }
+.api-keys-page .ak-table :is(th, td) { padding: var(--ak-space-4) var(--ak-space-3); vertical-align: top; overflow-wrap: anywhere; border-bottom: 1px solid var(--ak-line); }
+.api-keys-page .ak-table th:first-child { width: 22%; }
+.api-keys-page .ak-table th:last-child { width: 19%; }
+.api-keys-page .ak-table tr:last-child td { border-bottom: 0; }
+.api-keys-page .ak-key-name { font-weight: 600; font-size: var(--ak-type-body); }
+.api-keys-page code, .api-keys-page .ak-secret { font-family: var(--font-mono); overflow-wrap: anywhere; word-break: break-word; }
+.api-keys-page .ak-key-prefix { display: block; color: var(--ak-muted); margin-top: var(--ak-space-1); }
+.api-keys-page .ak-actions { display: flex; gap: var(--ak-space-2); flex-wrap: wrap; }
+.api-keys-page .ak-actions .btn { font-size: var(--ak-type-small); padding: var(--ak-space-2); }
+.api-keys-page .ak-status { display: inline-block; font-size: var(--ak-type-small); font-weight: 600; padding: var(--ak-space-1) var(--ak-space-2); border-radius: var(--ak-radius-small); background: var(--ak-background); color: var(--ak-muted); }
+.api-keys-page .ak-status-active { background: var(--success-light); color: var(--text-main); }
+.api-keys-page .ak-status-expired { background: var(--warning-light); color: var(--text-main); }
+.api-keys-page .ak-status-revoked { background: var(--danger-light); color: var(--danger-hover); }
+.api-keys-page .ak-state { padding: var(--ak-space-8) var(--ak-space-6); text-align: center; color: var(--ak-muted); }
+.api-keys-page .ak-error { color: var(--danger-hover); background: var(--danger-light); padding: var(--ak-space-3); border-radius: var(--ak-radius-small); overflow-wrap: anywhere; }
+.api-keys-page #ak-load-error { margin-bottom: var(--ak-space-6); }
+.api-keys-page #ak-load-error .btn { margin-top: var(--ak-space-2); }
+.api-keys-page .ak-feedback { margin-bottom: var(--ak-space-4); color: var(--primary-hover); }
+.api-keys-page .ak-connection { display: flex; gap: var(--ak-space-3); align-items: flex-start; margin: var(--ak-space-4) 0; }
+.api-keys-page .ak-endpoint { min-width: 0; flex: 1; padding: var(--ak-space-3); background: var(--ak-background); border: 1px solid var(--ak-line); border-radius: var(--ak-radius-small); }
+.api-keys-page .ak-steps { padding-left: var(--ak-space-6); }
+.api-keys-page .ak-steps li + li { margin-top: var(--ak-space-2); }
+.api-keys-page .ak-legacy-copy { margin: var(--ak-space-3) 0 var(--ak-space-4); }
+.api-keys-page .ak-dialog { position: fixed; inset: 0; margin: auto; width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; border: 1px solid var(--ak-line); border-radius: var(--ak-radius-panel); padding: var(--ak-space-6); color: var(--ak-ink); background: var(--ak-surface); box-shadow: var(--ak-elevation-dialog); }
+.api-keys-page .ak-dialog::backdrop { background: var(--ak-backdrop); }
+.api-keys-page .ak-dialog p { margin-top: var(--ak-space-3); }
+.api-keys-page .ak-dialog label { display: block; font-weight: 600; margin: var(--ak-space-4) 0 var(--ak-space-2); }
+.api-keys-page .ak-input { width: 100%; min-width: 0; min-height: 44px; padding: var(--ak-space-3); border: 1px solid var(--ak-line); border-radius: var(--ak-radius-small); background: var(--ak-surface); color: var(--ak-ink); font: inherit; }
+.api-keys-page .ak-dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--ak-space-2); margin-top: var(--ak-space-6); }
+.api-keys-page .ak-dialog .ak-error { margin-top: var(--ak-space-4); }
+.api-keys-page .ak-secret { resize: none; min-height: 100px; background: var(--ak-background); }
+.api-keys-page .ak-warning { color: var(--danger-hover); font-weight: 600; }
+@media (max-width: 1199px) and (min-width: 768px) {
+  .api-keys-page .ak-table { font-size: 11px; }
+  .api-keys-page .ak-table :is(th, td) { padding: var(--ak-space-3) var(--ak-space-2); }
+  .api-keys-page .ak-content { padding: var(--ak-space-6); }
+}
+@media (max-width: 767px) {
+  .api-keys-page .app-container { flex-direction: column; }
+  .api-keys-page .sidebar { position: static; width: 100%; height: auto; border-right: 0; border-bottom: 1px solid var(--ak-line); z-index: auto; box-shadow: none; }
+  .api-keys-page .sidebar-header { padding: var(--ak-space-4); }
+  .api-keys-page .sidebar-nav { padding: var(--ak-space-2) var(--ak-space-4); flex-direction: row; flex-wrap: wrap; }
+  .api-keys-page .sidebar-nav .nav-link { width: auto; }
+  .api-keys-page .sidebar-nav .nav-label, .api-keys-page .sidebar-footer { display: none; }
+  .api-keys-page .ak-topbar { padding: var(--ak-space-3) var(--ak-space-4); min-height: auto; }
+  .api-keys-page .ak-content { padding: var(--ak-space-6) var(--ak-space-4); }
+  .api-keys-page .ak-counts { gap: var(--ak-space-2); }
+  .api-keys-page .ak-count { padding: var(--ak-space-3); }
+  .api-keys-page .ak-section-heading, .api-keys-page .ak-panel-body { padding: var(--ak-space-4); }
+  .api-keys-page .ak-table, .api-keys-page .ak-table tbody { display: block; }
+  .api-keys-page .ak-table thead { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+  .api-keys-page .ak-table tr { display: block; padding: var(--ak-space-4); border-bottom: 1px solid var(--ak-line); }
+  .api-keys-page .ak-table tr:last-child { border-bottom: 0; }
+  .api-keys-page .ak-table td { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: var(--ak-space-3); padding: var(--ak-space-2) 0; border: 0; font-size: var(--ak-type-small); }
+  .api-keys-page .ak-table td::before { content: attr(data-label); font-weight: 500; color: var(--ak-muted); }
+  .api-keys-page .ak-connection { flex-direction: column; }
+  .api-keys-page .ak-endpoint { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .api-keys-page *, .api-keys-page *::before, .api-keys-page *::after { transition: none !important; animation: none !important; }
+}
