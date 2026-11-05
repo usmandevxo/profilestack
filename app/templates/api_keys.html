@@ -111,11 +111,26 @@
       <div class="ak-dialog-actions"><button type="button" class="btn btn-secondary" data-dismiss>Cancel</button><button type="submit" class="btn btn-primary" id="ak-access-submit">Save access</button></div>
     </form>
   </dialog>
-  <dialog class="ak-dialog" id="ak-secret-dialog" aria-labelledby="ak-secret-title" aria-describedby="ak-secret-description">
+  <dialog class="ak-dialog" id="ak-secret-dialog" aria-labelledby="ak-secret-title" aria-describedby="ak-secret-description" style="max-width: 580px;">
     <h2 id="ak-secret-title">Save your API key</h2>
     <p id="ak-secret-description" class="ak-warning">Copy this secret now. After you close this dialog, it cannot be shown again.</p>
     <label for="ak-secret">Your new secret</label><textarea class="ak-input ak-secret" id="ak-secret" readonly spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="ak-secret-description"></textarea>
     <p id="ak-copy-status" role="status" aria-live="polite"></p>
+
+    <div style="margin-top: 14px; text-align: left; border-top: 1px solid var(--border, #e2e8f0); padding-top: 12px;">
+      <h3 style="font-size: 13px; font-weight: 600; margin: 0 0 6px 0; color: var(--text-primary, #0f172a);">Authentication Snippets</h3>
+      <p style="font-size: 12px; color: var(--text-secondary, #64748b); margin: 0 0 8px 0;">Use HTTP header <code>Authorization: Bearer &lt;key&gt;</code> or <code>X-API-Key: &lt;key&gt;</code>.</p>
+
+      <label style="font-size: 11px; font-weight: 600; color: #475569; text-transform: uppercase;">Cursor / Windsurf Config</label>
+      <textarea class="ak-input" id="ak-snippet-cursor" readonly rows="7" style="font-family: monospace; font-size: 11px; margin-bottom: 8px;"></textarea>
+
+      <label style="font-size: 11px; font-weight: 600; color: #475569; text-transform: uppercase;">Hermes Agent Config</label>
+      <textarea class="ak-input" id="ak-snippet-hermes" readonly rows="5" style="font-family: monospace; font-size: 11px; margin-bottom: 8px;"></textarea>
+
+      <label style="font-size: 11px; font-weight: 600; color: #475569; text-transform: uppercase;">cURL Example</label>
+      <textarea class="ak-input" id="ak-snippet-curl" readonly rows="2" style="font-family: monospace; font-size: 11px; margin-bottom: 8px;"></textarea>
+    </div>
+
     <div class="ak-dialog-actions"><button type="button" class="btn btn-secondary" id="ak-copy-secret" autofocus>Copy secret</button><button type="button" class="btn btn-primary" data-dismiss>I’ve saved my key</button></div>
   </dialog>
   <dialog class="ak-dialog" id="ak-rename-dialog" aria-labelledby="ak-rename-title" aria-describedby="ak-rename-description">

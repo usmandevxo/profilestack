@@ -776,6 +776,8 @@
             <div class="mcp-tab-group">
               <button class="mcp-tab-btn active" id="tab-btn-claude" onclick="switchMcpTab('claude')">Claude Desktop</button>
               <button class="mcp-tab-btn" id="tab-btn-cursor" onclick="switchMcpTab('cursor')">Cursor / Windsurf</button>
+              <button class="mcp-tab-btn" id="tab-btn-hermes" onclick="switchMcpTab('hermes')">Hermes Agent</button>
+              <button class="mcp-tab-btn" id="tab-btn-curl" onclick="switchMcpTab('curl')">cURL</button>
               <button class="mcp-tab-btn" id="tab-btn-python" onclick="switchMcpTab('python')">Python SDK</button>
             </div>
           </div>
@@ -800,17 +802,49 @@
           <!-- Tab Content: Cursor -->
           <div id="mcp-tab-cursor" class="mcp-tab-panel">
             <pre class="mcp-code-block"><code id="code-cursor">{
-  "name": "profilestack",
-  "type": "sse",
-  "url": "https://profilestack.rerouter.online/mcp/sse",
-  "headers": {
-    "Authorization": "Bearer YOUR_API_KEY"
+  "mcpServers": {
+    "profilestack": {
+      "url": "https://profilestack.rerouter.online/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
+      }
+    }
   }
 }</code></pre>
             <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
               <button class="btn btn-secondary btn-sm" onclick="copyCodeSnippet('code-cursor')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 Copy Cursor Config
+              </button>
+            </div>
+          </div>
+
+          <!-- Tab Content: Hermes Agent -->
+          <div id="mcp-tab-hermes" class="mcp-tab-panel">
+            <pre class="mcp-code-block"><code id="code-hermes">mcp_servers:
+  profilestack:
+    url: https://profilestack.rerouter.online/mcp/sse
+    headers:
+      Authorization: "Bearer YOUR_API_KEY"</code></pre>
+            <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+              <button class="btn btn-secondary btn-sm" onclick="copyCodeSnippet('code-hermes')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Copy Hermes Config
+              </button>
+            </div>
+          </div>
+
+          <!-- Tab Content: cURL -->
+          <div id="mcp-tab-curl" class="mcp-tab-panel">
+            <pre class="mcp-code-block"><code id="code-curl"># Test MCP SSE connection:
+curl -N -H "Authorization: Bearer YOUR_API_KEY" https://profilestack.rerouter.online/mcp/sse
+
+# Query REST API profiles:
+curl -H "Authorization: Bearer YOUR_API_KEY" https://profilestack.rerouter.online/api/profiles</code></pre>
+            <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+              <button class="btn btn-secondary btn-sm" onclick="copyCodeSnippet('code-curl')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Copy cURL Snippet
               </button>
             </div>
           </div>

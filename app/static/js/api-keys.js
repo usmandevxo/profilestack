@@ -164,6 +164,9 @@
   }
   function clearSecret() {
     secretGeneration++; secret = ''; $('ak-secret').value = ''; $('ak-secret').textContent = '';
+    if ($('ak-snippet-cursor')) $('ak-snippet-cursor').value = '';
+    if ($('ak-snippet-hermes')) $('ak-snippet-hermes').value = '';
+    if ($('ak-snippet-curl')) $('ak-snippet-curl').value = '';
     $('ak-copy-status').textContent = ''; $('ak-copy-secret').disabled = false;
   }
   function busy(dialog, value, submitId, text) {
@@ -374,6 +377,25 @@
       state.keys = [metadata(data.key), ...state.keys.filter((key) => key.id !== data.key.id)];
       if (state.loaded) render();
       clearSecret(); secret = data.secret; data.secret = null; $('ak-secret').value = secret;
+      const origin = window.location.origin;
+      if ($('ak-snippet-cursor')) {
+        $('ak-snippet-cursor').value = JSON.stringify({
+          mcpServers: {
+            profilestack: {
+              url: `${origin}/mcp/sse`,
+              headers: {
+                Authorization: `Bearer ${secret}`
+              }
+            }
+          }
+        }, null, 2);
+      }
+      if ($('ak-snippet-hermes')) {
+        $('ak-snippet-hermes').value = `mcp_servers:\n  profilestack:\n    url: ${origin}/mcp/sse\n    headers:\n      Authorization: "Bearer ${secret}"`;
+      }
+      if ($('ak-snippet-curl')) {
+        $('ak-snippet-curl').value = `curl -H "Authorization: Bearer ${secret}" ${origin}/api/profiles`;
+      }
       dialog.close(); openDialog('ak-secret-dialog', $('ak-create')); feedback('API key created. Save its secret now.');
       await loadKeys();
     } catch (error) { showError('ak-create-error', errorText(error)); }

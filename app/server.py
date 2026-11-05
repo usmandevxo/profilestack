@@ -130,12 +130,35 @@ class AuthMiddleware:
         token = request.cookies.get(auth.COOKIE_NAME)
         if not token:
             token = request.headers.get("X-Session-Token") or request.query_params.get("token")
-            if not token:
-                auth_header = request.headers.get("Authorization", "")
-                if auth_header.startswith("Bearer "):
+            if not token and path != "/api/auth/check":
+                auth_header = request.headers.get("Authorization", "").strip()
+                if auth_header.lower().startswith("bearer "):
                     token = auth_header[7:].strip()
+                elif auth_header.startswith("psk_"):
+                    token = auth_header
+                if not token:
+                    token = (request.headers.get("X-API-Key") or request.headers.get("api-key") or "").strip()
 
-        session = auth.validate_session(token) if token else None
+        session = auth.validate_session(token) if (token and not token.startswith("psk_")) else None
+        if not session and token and token.startswith("psk_") and path != "/api/auth/check":
+            from app import api_key_store as store
+            principal = store.get_principal(token)
+            if principal:
+                uname = principal.get("owner", "")
+                user_obj = auth.get_user(uname)
+                if user_obj and user_obj.get("status") == "disabled":
+                    if path.startswith("/api/"):
+                        response = JSONResponse(status_code=401, content={"detail": "Account is disabled."})
+                        return await response(scope, receive, send)
+                    response = RedirectResponse(url="/login", status_code=303)
+                    return await response(scope, receive, send)
+                session = {
+                    "username": uname,
+                    "role": user_obj.get("role", "user") if user_obj else principal.get("role", "user"),
+                    "mcp_profile": user_obj.get("mcp_profile", "standard") if user_obj else "standard",
+                    "mcp_access": user_obj.get("mcp_access", {}) if user_obj else {},
+                    "api_key_principal": principal,
+                }
         if session:
             uname = str(session.get("username") or "")
             user_obj = auth.get_user(uname)

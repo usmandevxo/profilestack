@@ -25,16 +25,27 @@ MCP_API_KEY = _load_key()
 def resolve_mcp_principal(headers):
     authorization = headers.getlist("authorization")
     api_keys = headers.getlist("x-api-key")
-    # Ambiguous credentials are rejected, rather than selecting one silently.
-    if len(authorization) > 1 or len(api_keys) > 1 or (authorization and api_keys):
+    alt_api_keys = headers.getlist("api-key")
+
+    # Ambiguous credentials from multiple distinct header sources are rejected.
+    distinct_sources = [h for h in (authorization, api_keys, alt_api_keys) if h]
+    if len(distinct_sources) > 1 or any(len(h) > 1 for h in distinct_sources):
         return None
+
     candidate = ""
     if authorization:
-        scheme, separator, candidate = authorization[0].partition(" ")
-        if not separator or scheme.lower() != "bearer":
+        raw = authorization[0].strip()
+        if raw.lower().startswith("bearer "):
+            candidate = raw[7:].strip()
+        elif raw.startswith("psk_") or (bool(MCP_API_KEY) and hmac.compare_digest(raw, MCP_API_KEY)):
+            candidate = raw
+        else:
             return None
     elif api_keys:
-        candidate = api_keys[0]
+        candidate = api_keys[0].strip()
+    elif alt_api_keys:
+        candidate = alt_api_keys[0].strip()
+
     if not candidate or not candidate.isascii():
         return None
     from app import api_key_store as store

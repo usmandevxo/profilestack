@@ -128,6 +128,35 @@ class APIKeyRouteTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(valid_mcp_key(Headers({"X-API-Key": legacy})))
             self.assertTrue(valid_mcp_key(Headers({"X-API-Key": result["secret"]})))
 
+    async def test_api_key_authenticates_rest_api_and_scopes_to_user(self):
+        from app import api_key_store as store
+        result = store.create_key("UsamaKey", 30, owner="Usama")
+        secret = result["secret"]
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://testserver") as client:
+            # 1. Bearer token
+            r = await client.get("/api/profiles", headers={"Authorization": f"Bearer {secret}"})
+            self.assertEqual(r.status_code, 200)
+
+            # 2. Raw Authorization header
+            r = await client.get("/api/profiles", headers={"Authorization": secret})
+            self.assertEqual(r.status_code, 200)
+
+            # 3. X-API-Key header
+            r = await client.get("/api/profiles", headers={"X-API-Key": secret})
+            self.assertEqual(r.status_code, 200)
+
+            # 4. api-key header
+            r = await client.get("/api/profiles", headers={"api-key": secret})
+            self.assertEqual(r.status_code, 200)
+
+            # 5. /api/auth/check must reject API keys (requires web session for VNC)
+            r = await client.get("/api/auth/check", headers={"Authorization": f"Bearer {secret}"})
+            self.assertEqual(r.status_code, 401)
+
+            # 6. /api/api-keys must reject API keys (cannot manage keys)
+            r = await client.get("/api/api-keys", headers={"Authorization": f"Bearer {secret}"})
+            self.assertEqual(r.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()
