@@ -309,24 +309,40 @@ class TransportPolicyTests(unittest.IsolatedAsyncioTestCase):
 
     def test_tenant_can_create_folder_and_profile_in_folder(self):
         import json
+        import uuid
         from app.key_policy import current_principal, authorize
         from app import mcp_server as srv
+        from app import profile_manager as pm
+        from app import folder_manager as fm
+        test_uid = uuid.uuid4().hex[:6]
+        f_name = f'Project X {test_uid}'
+        p_name = f'bob_browser_{test_uid}'
         k = store.create_key('TenantKey', 30, permissions=['folders.manage', 'folders.read', 'profiles.create', 'profiles.read'], owner='tenant_bob')
         p = store.get_principal(k['secret'])
         token = current_principal.set(p)
+        f_id = None
         try:
-            authorize('create_folder', {'name': 'Project X'})
-            folder_res = json.loads(srv.create_folder(name='Project X', description='Desc'))
+            authorize('create_folder', {'name': f_name})
+            folder_res = json.loads(srv.create_folder(name=f_name, description='Desc'))
             self.assertEqual(folder_res.get('status'), 'success')
             f_id = folder_res['folder']['id']
             self.assertEqual(folder_res['folder']['owner'], 'tenant_bob')
 
-            authorize('create_profile', {'profile_name': 'bob_browser', 'folder': f_id})
-            prof_res = json.loads(srv.create_profile(profile_name='bob_browser', folder=f_id))
+            authorize('create_profile', {'profile_name': p_name, 'folder': f_id})
+            prof_res = json.loads(srv.create_profile(profile_name=p_name, folder=f_id))
             self.assertEqual(prof_res.get('status'), 'success')
             self.assertEqual(prof_res['profile']['owner'], 'tenant_bob')
             self.assertEqual(prof_res['profile']['folder'], f_id)
         finally:
+            try:
+                pm.delete_profile(p_name)
+            except Exception:
+                pass
+            if f_id:
+                try:
+                    fm.delete_folder(f_id)
+                except Exception:
+                    pass
             current_principal.reset(token)
             store.revoke_key(k['key']['id'])
 
