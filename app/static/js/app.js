@@ -1364,7 +1364,7 @@ document.getElementById('user-reset-pwd-form')?.addEventListener('submit', async
     const res = await fetch(`/api/users/${encodeURIComponent(username)}/reset-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ new_password })
+      body: JSON.stringify({ password: new_password, new_password: new_password })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to reset password');

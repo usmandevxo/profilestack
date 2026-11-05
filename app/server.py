@@ -198,7 +198,15 @@ class UpdateUserRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    password: str
+    password: Optional[str] = None
+    new_password: Optional[str] = None
+    newPassword: Optional[str] = None
+
+    def get_password(self) -> str:
+        pwd = self.new_password or self.password or self.newPassword
+        if not pwd or len(pwd) < 5:
+            raise ValueError("New password must be at least 5 characters.")
+        return pwd
 
 
 class CreateFolderRequest(BaseModel):
@@ -578,11 +586,36 @@ async def update_user_endpoint(username: str, req: UpdateUserRequest, request: R
 @app.post("/api/users/{username}/reset-password")
 async def reset_user_password_endpoint(username: str, req: ResetPasswordRequest, request: Request):
     user = getattr(request.state, "user", None)
-    if not user or user.get("role") != "admin":
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    caller_role = user.get("role", "user")
+    caller_name = str(user.get("username") or "")
+
+    # Admin can reset any user's password; standard user can reset their own password
+    if caller_role != "admin" and caller_name.lower() != username.strip().lower():
         raise HTTPException(status_code=403, detail="Administrator access required.")
     try:
-        auth.admin_reset_password(username, req.password)
+        new_pwd = req.get_password()
+        current_token = request.cookies.get("ps_session")
+        auth.admin_reset_password(username, new_pwd, preserve_token=current_token)
         return {"status": "success", "message": f"Password reset for user '{username}'."}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/auth/reset-password")
+async def auth_self_reset_password_endpoint(req: ResetPasswordRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    username = str(user.get("username") or "")
+    try:
+        new_pwd = req.get_password()
+        current_token = request.cookies.get("ps_session")
+        auth.admin_reset_password(username, new_pwd, preserve_token=current_token)
+        return {"status": "success", "message": f"Password updated for '{username}'."}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

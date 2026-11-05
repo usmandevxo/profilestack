@@ -318,7 +318,7 @@ def update_user(
     return _sanitize_user(target_user)
 
 
-def admin_reset_password(username: str, new_password: str) -> None:
+def admin_reset_password(username: str, new_password: str, preserve_token: Optional[str] = None) -> None:
     users = load_users()
     target_key = None
     target_user = None
@@ -337,7 +337,7 @@ def admin_reset_password(username: str, new_password: str) -> None:
     target_user["password_hash"] = _hash_password(new_password)
     users[target_key] = target_user
     save_users(users)
-    destroy_all_user_sessions(username)
+    destroy_all_user_sessions(username, except_token=preserve_token)
 
 
 def delete_user(username: str, current_username: Optional[str] = None) -> bool:
@@ -484,13 +484,13 @@ def purge_expired_sessions() -> None:
         save_sessions(valid)
 
 
-def destroy_all_user_sessions(username: str) -> None:
+def destroy_all_user_sessions(username: str, except_token: Optional[str] = None) -> None:
     if not username:
         return
     sessions = load_sessions()
     filtered = {
         token: s for token, s in sessions.items()
-        if s.get("username", "").lower() != username.strip().lower()
+        if (s.get("username", "").lower() != username.strip().lower()) or (except_token and token == except_token)
     }
     if len(filtered) != len(sessions):
         save_sessions(filtered)
@@ -544,3 +544,40 @@ def destroy_session(token: str) -> None:
     if token in sessions:
         del sessions[token]
         save_sessions(sessions)
+
+
+if __name__ == "__main__":
+    import sys
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help", "help"):
+        print("Usage:")
+        print("  python3 -m app.auth_manager list")
+        print("  python3 -m app.auth_manager reset <username> <new_password>")
+        print("  python3 -m app.auth_manager add <username> <password> [role]")
+        sys.exit(0)
+
+    cmd = args[0]
+    if cmd == "list":
+        for u in list_users():
+            print(f"- {u['username']} (role={u['role']}, status={u['status']}, mcp={u.get('mcp_profile')})")
+    elif cmd == "reset":
+        if len(args) < 3:
+            print("Error: Missing arguments. Usage: python3 -m app.auth_manager reset <username> <new_password>")
+            sys.exit(1)
+        target = args[1]
+        pwd = args[2]
+        admin_reset_password(target, pwd)
+        print(f"Password reset successfully for user '{target}'.")
+    elif cmd == "add":
+        if len(args) < 3:
+            print("Error: Missing arguments. Usage: python3 -m app.auth_manager add <username> <password> [role]")
+            sys.exit(1)
+        target = args[1]
+        pwd = args[2]
+        user_role = args[3] if len(args) > 3 else "user"
+        create_user(target, pwd, role=user_role)
+        print(f"User '{target}' created with role '{user_role}'.")
+    else:
+        print(f"Unknown command '{cmd}'. Run with --help for usage.")
+        sys.exit(1)
+
