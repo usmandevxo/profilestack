@@ -186,6 +186,7 @@
             </svg>
             <span class="desktop-btn-label">Import</span>
           </button>
+          {% if user and user.role == 'admin' %}
           <button class="btn btn-secondary btn-sm" id="btn-topbar-launcher" title="Setup ProfileStack Desktop App or Native Browser Launcher on Your PC">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
@@ -204,6 +205,7 @@
             </svg>
             <span class="desktop-btn-label">API Docs</span>
           </a>
+          {% endif %}
           <a href="/logout" class="btn btn-secondary btn-sm btn-nav-signout" title="Sign Out of ProfileStack">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -594,6 +596,7 @@
     </div>
   </div>
 
+  {% if user and user.role == 'admin' %}
   <!-- Local PC Launcher Modal -->
   <div class="modal-overlay" id="modal-launcher-setup">
     <div class="modal modal-wide" style="max-width: 620px;">
@@ -701,6 +704,7 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
   <!-- MCP AI Configuration Modal -->
   <div class="modal-overlay" id="modal-mcp-config">
@@ -962,6 +966,10 @@ async with stdio_client(params) as (read, write):
   <!-- Toast Container -->
   <div id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20261007_v4_pipesafe"></script>
+  <script>
+    window.__CURRENT_USER_ROLE__ = "{{ user.role if user and user.role else 'user' }}";
+    window.__CURRENT_USERNAME__ = "{{ user.username if user and user.username else '' }}";
+  </script>
+  <script src="/static/js/app.js?v=20261105_v5"></script>
 </body>
 </html>

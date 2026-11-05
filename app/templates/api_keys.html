@@ -30,7 +30,9 @@
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="9" r="5"/><path d="m12 12 9 9m-5-5 3-3m-6 0 3-3"/></svg>
           API Keys
         </a>
+        {% if user and user.role == 'admin' %}
         <a class="nav-link" href="/api/docs">API Documentation</a>
+        {% endif %}
         <a class="nav-link" href="/logout">Sign Out</a>
       </nav>
       <div class="sidebar-footer">
@@ -72,7 +74,7 @@
             <strong>SSE endpoint</strong>
             <div class="ak-connection"><code class="ak-endpoint" id="ak-endpoint">Loading endpoint…</code><button type="button" class="btn btn-secondary" id="ak-copy-endpoint" disabled>Copy endpoint</button></div>
             <ol class="ak-steps"><li>Create a key with a name you recognize, such as “Desktop MCP client”.</li><li>Save the secret when it appears. You cannot retrieve it later.</li><li>Set your client’s server URL to the endpoint above, with the header <code>Authorization: Bearer YOUR_API_KEY</code>. Replace the placeholder with your secret, not its prefix.</li></ol>
-            <p class="ak-muted ak-legacy-copy">Keep secrets out of URLs, shared configuration files, and logs. See <a href="/api/docs">API documentation</a> for the available operations.</p>
+            <p class="ak-muted ak-legacy-copy">Keep secrets out of URLs, shared configuration files, and logs.{% if user and user.role == 'admin' %} See <a href="/api/docs">API documentation</a> for the available operations.{% endif %}</p>
           </div>
         </section>
         <section class="ak-panel" aria-labelledby="ak-legacy-title">

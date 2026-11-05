@@ -19,6 +19,22 @@ let savedFolders = [];
 let activeFilter = 'all';
 let activeFolderFilter = 'all';
 
+function isAdminUser() {
+  return (window.__CURRENT_USER_ROLE__ || '').toLowerCase() === 'admin';
+}
+
+async function syncCurrentUserRole() {
+  try {
+    const res = await fetch('/api/auth/me');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.role) {
+        window.__CURRENT_USER_ROLE__ = data.role;
+      }
+    }
+  } catch (e) {}
+}
+
 const PRESET_COLORS = [
   '#2563eb', // Blue
   '#059669', // Emerald
@@ -317,12 +333,21 @@ function renderProfilesTable() {
               </div>
               <div class="profile-meta">
                 <div class="profile-name-row">
-                  <a href="javascript:void(0)" 
-                     class="profile-name-link clickable" 
-                     onclick="launchOnLocalPC('${esc(p.name)}')" 
-                     title="Launch Real Native Chromium on Your PC">
-                    ${esc(p.name)}
-                  </a>
+                  ${isAdminUser() ? `
+                    <a href="javascript:void(0)" 
+                       class="profile-name-link clickable" 
+                       onclick="launchOnLocalPC('${esc(p.name)}')" 
+                       title="Launch Real Native Chromium on Your PC">
+                      ${esc(p.name)}
+                    </a>
+                  ` : `
+                    <a href="javascript:void(0)" 
+                       class="profile-name-link clickable" 
+                       onclick="${isRunning ? `openViewer('${esc(p.name)}')` : `startProfile('${esc(p.name)}')`}" 
+                       title="${isRunning ? 'Open Profile Screen' : 'Start Profile'}">
+                      ${esc(p.name)}
+                    </a>
+                  `}
                   ${p.start_url ? `
                     <a href="${esc(p.start_url)}" target="_blank" class="profile-ext-link" title="Target: ${esc(p.start_url)}">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
@@ -388,26 +413,40 @@ function renderProfilesTable() {
           <td style="text-align: right;">
             <div class="row-actions-group">
               ${isRunning ? `
-                <button class="btn btn-primary btn-sm btn-action-main" onclick="launchOnLocalPC('${esc(p.name)}')" title="Launch 100% REAL native Chromium window on your PC">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                  <span>Real Browser</span>
-                </button>
-                <button class="btn btn-secondary btn-sm btn-action-main" onclick="openViewer('${esc(p.name)}')" title="Open Web Screen Stream">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                  <span>Screen</span>
-                </button>
+                ${isAdminUser() ? `
+                  <button class="btn btn-primary btn-sm btn-action-main" onclick="launchOnLocalPC('${esc(p.name)}')" title="Launch 100% REAL native Chromium window on your PC">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                    <span>Real Browser</span>
+                  </button>
+                  <button class="btn btn-secondary btn-sm btn-action-main" onclick="openViewer('${esc(p.name)}')" title="Open Web Screen Stream">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                    <span>Screen</span>
+                  </button>
+                ` : `
+                  <button class="btn btn-primary btn-sm btn-action-main" onclick="openViewer('${esc(p.name)}')" title="Open Web Screen Stream">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                    <span>Screen</span>
+                  </button>
+                `}
                 <button class="btn btn-danger-soft btn-sm btn-icon-action" onclick="stopProfile('${esc(p.name)}')" title="Stop Active Container">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"></rect></svg>
                 </button>
               ` : `
-                <button class="btn btn-primary btn-sm btn-action-main" onclick="launchOnLocalPC('${esc(p.name)}')" title="Launch 100% REAL native Chromium window on your PC">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                  <span>Real Browser</span>
-                </button>
-                <button class="btn btn-success btn-sm btn-action-main" onclick="startProfile('${esc(p.name)}')" title="Start Cloud Container">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 18 12 6 20 6 4"></polygon></svg>
-                  <span>Start</span>
-                </button>
+                ${isAdminUser() ? `
+                  <button class="btn btn-primary btn-sm btn-action-main" onclick="launchOnLocalPC('${esc(p.name)}')" title="Launch 100% REAL native Chromium window on your PC">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                    <span>Real Browser</span>
+                  </button>
+                  <button class="btn btn-success btn-sm btn-action-main" onclick="startProfile('${esc(p.name)}')" title="Start Cloud Container">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 18 12 6 20 6 4"></polygon></svg>
+                    <span>Start</span>
+                  </button>
+                ` : `
+                  <button class="btn btn-success btn-sm btn-action-main" onclick="startProfile('${esc(p.name)}')" title="Start Cloud Container">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 18 12 6 20 6 4"></polygon></svg>
+                    <span>Start</span>
+                  </button>
+                `}
               `}
 
               <div class="action-icon-toolbar">
@@ -488,18 +527,26 @@ function renderProfilesTable() {
 
           <div class="profile-feed-actions">
             ${isRunning ? `
-              <button class="btn btn-primary" onclick="launchOnLocalPC('${esc(p.name)}')">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                Real Browser (PC)
-              </button>
-              <button class="btn btn-secondary" onclick="openViewer('${esc(p.name)}')">Web Screen</button>
+              ${isAdminUser() ? `
+                <button class="btn btn-primary" onclick="launchOnLocalPC('${esc(p.name)}')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                  Real Browser (PC)
+                </button>
+                <button class="btn btn-secondary" onclick="openViewer('${esc(p.name)}')">Web Screen</button>
+              ` : `
+                <button class="btn btn-primary" onclick="openViewer('${esc(p.name)}')">Web Screen</button>
+              `}
               <button class="btn btn-danger" onclick="stopProfile('${esc(p.name)}')">Stop</button>
             ` : `
-              <button class="btn btn-primary" onclick="launchOnLocalPC('${esc(p.name)}')">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                Real Browser (PC)
-              </button>
-              <button class="btn btn-success" onclick="startProfile('${esc(p.name)}')">Start Cloud</button>
+              ${isAdminUser() ? `
+                <button class="btn btn-primary" onclick="launchOnLocalPC('${esc(p.name)}')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                  Real Browser (PC)
+                </button>
+                <button class="btn btn-success" onclick="startProfile('${esc(p.name)}')">Start Cloud</button>
+              ` : `
+                <button class="btn btn-success" onclick="startProfile('${esc(p.name)}')">Start Profile</button>
+              `}
             `}
             <button class="btn btn-secondary" onclick="openEditModal('${esc(p.name)}')">Edit</button>
             <button class="btn btn-secondary" onclick="exportProfile('${esc(p.name)}')">Export</button>
@@ -678,6 +725,10 @@ async function getSessionToken() {
 }
 
 async function launchOnLocalPC(name) {
+  if (!isAdminUser()) {
+    showToast('Desktop Launcher is available for administrators only.', 'error');
+    return;
+  }
   const serverUrl = window.location.origin;
   const token = await getSessionToken();
   const protocolUrl = `profilestack://launch?profile=${encodeURIComponent(name)}&server=${encodeURIComponent(serverUrl)}&token=${encodeURIComponent(token)}`;
@@ -1409,6 +1460,11 @@ async function deleteUserAccount(username) {
 
 // Initial Load & Intervals
 window.addEventListener('DOMContentLoaded', async () => {
+  await syncCurrentUserRole();
+  if (!isAdminUser()) {
+    const launcherBtn = document.getElementById('btn-topbar-launcher');
+    if (launcherBtn) launcherBtn.style.display = 'none';
+  }
   initColorPalettes();
   await fetchTelemetry();
   await fetchFolders();

@@ -4,6 +4,8 @@ from pathlib import Path
 from urllib.parse import quote
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -25,7 +27,7 @@ from app.api_key_routes import router as api_key_router, require_admin, require_
 # Ensure default administrator user is initialized
 auth.init_default_user()
 
-app = FastAPI(title="ProfileStack", version="1.0.0", docs_url="/api/docs", redoc_url=None)
+app = FastAPI(title="ProfileStack", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -72,9 +74,6 @@ PUBLIC_PREFIXES = (
     "/favicon.ico",
     "/favicon.svg",
     "/apple-touch-icon.png",
-    "/install-launcher.sh",
-    "/install-desktop.sh",
-    "/launcher/",
 )
 
 
@@ -158,7 +157,7 @@ class AuthMiddleware:
             scope.setdefault("state", {})["user"] = session
             return await self.app(scope, receive, send)
 
-        if path.startswith("/api/"):
+        if path.startswith("/api/") and path != "/api/docs":
             response = JSONResponse(status_code=401, content={"detail": "Authentication required."})
             return await response(scope, receive, send)
 
@@ -905,8 +904,29 @@ async def sync_back_profile(name: str, file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/openapi.json", include_in_schema=False)
+async def get_open_api_endpoint(request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=404, detail="Not Found")
+    return JSONResponse(get_openapi(title="ProfileStack", version="1.0.0", routes=app.routes))
+
+
+@app.get("/api/docs", include_in_schema=False)
+async def get_documentation(request: Request):
+    user = getattr(request.state, "user", None)
+    if not user:
+        return RedirectResponse(url="/login?next=/api/docs", status_code=303)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=404, detail="Not Found")
+    return get_swagger_ui_html(openapi_url="/openapi.json", title="ProfileStack - API Docs")
+
+
 @app.get("/install-launcher.sh")
-async def get_install_launcher_script():
+async def get_install_launcher_script(request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=404, detail="Not Found")
     script_path = BASE_DIR / "launcher" / "install-launcher.sh"
     if not script_path.is_file():
         raise HTTPException(status_code=404, detail="Install script not found.")
@@ -914,7 +934,10 @@ async def get_install_launcher_script():
 
 
 @app.get("/install-desktop.sh")
-async def get_install_desktop_script():
+async def get_install_desktop_script(request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=404, detail="Not Found")
     script_path = BASE_DIR / "launcher" / "install-desktop.sh"
     if not script_path.is_file():
         raise HTTPException(status_code=404, detail="Install desktop script not found.")
@@ -922,7 +945,10 @@ async def get_install_desktop_script():
 
 
 @app.get("/launcher/profilestack-launcher.py")
-async def get_launcher_binary():
+async def get_launcher_binary(request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=404, detail="Not Found")
     bin_path = BASE_DIR / "launcher" / "profilestack-launcher.py"
     if not bin_path.is_file():
         raise HTTPException(status_code=404, detail="Launcher binary not found.")
@@ -930,7 +956,10 @@ async def get_launcher_binary():
 
 
 @app.get("/launcher/profilestack-desktop.py")
-async def get_desktop_binary():
+async def get_desktop_binary(request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=404, detail="Not Found")
     bin_path = BASE_DIR / "launcher" / "profilestack-desktop.py"
     if not bin_path.is_file():
         raise HTTPException(status_code=404, detail="Desktop binary not found.")
@@ -938,7 +967,10 @@ async def get_desktop_binary():
 
 
 @app.get("/launcher/dist/{filename}")
-async def get_launcher_dist_file(filename: str):
+async def get_launcher_dist_file(filename: str, request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=404, detail="Not Found")
     dist_path = (BASE_DIR / "launcher" / "dist" / filename).resolve()
     base_dist = (BASE_DIR / "launcher" / "dist").resolve()
     if not str(dist_path).startswith(str(base_dist)) or not dist_path.is_file():
