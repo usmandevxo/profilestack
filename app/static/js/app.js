@@ -84,24 +84,39 @@ async function fetchTelemetry() {
     const res = await fetch(apiParam('/api/telemetry'));
     if (!res.ok) return;
     const data = await res.json();
-    document.getElementById('m-total-profiles').textContent = data.total_profiles;
-    document.getElementById('m-running-profiles').textContent = data.running_profiles;
-    const ramUsed = (data.ram_used_gb !== undefined ? data.ram_used_gb : data.memory_used_gb) ?? '3.8';
-    const ramTotal = (data.ram_total_gb !== undefined ? data.ram_total_gb : data.memory_total_gb) ?? '24.0';
-    const storageMb = (data.storage_profiles_mb !== undefined ? data.storage_profiles_mb : data.profiles_storage_mb) ?? '166.5';
-    document.getElementById('m-ram').textContent = `${ramUsed} / ${ramTotal} GB`;
-    document.getElementById('m-disk').textContent = `${storageMb} MB`;
+    const elTotal = document.getElementById('m-total-profiles');
+    if (elTotal) elTotal.textContent = data.total_profiles ?? 0;
+    const elRunning = document.getElementById('m-running-profiles');
+    if (elRunning) elRunning.textContent = data.running_profiles ?? 0;
 
-    document.getElementById('badge-count-all').textContent = data.total_profiles;
-    document.getElementById('badge-count-running').textContent = data.running_profiles;
-    document.getElementById('badge-count-stopped').textContent = data.total_profiles - data.running_profiles;
+    if (isAdminUser()) {
+      const ramUsed = (data.ram_used_gb !== undefined ? data.ram_used_gb : data.memory_used_gb) ?? '0.0';
+      const ramTotal = (data.ram_total_gb !== undefined ? data.ram_total_gb : data.memory_total_gb) ?? '0.0';
+      const storageMb = (data.storage_profiles_mb !== undefined ? data.storage_profiles_mb : data.profiles_storage_mb) ?? '0.0';
+      const mRam = document.getElementById('m-ram');
+      if (mRam) mRam.textContent = `${ramUsed} / ${ramTotal} GB`;
+      const mDisk = document.getElementById('m-disk');
+      if (mDisk) mDisk.textContent = `${storageMb} MB`;
+    } else {
+      const ramCard = document.getElementById('m-ram')?.closest('.metric-card');
+      if (ramCard) ramCard.remove();
+      const diskCard = document.getElementById('m-disk')?.closest('.metric-card');
+      if (diskCard) diskCard.remove();
+    }
+
+    const bAll = document.getElementById('badge-count-all');
+    if (bAll) bAll.textContent = data.total_profiles ?? 0;
+    const bRun = document.getElementById('badge-count-running');
+    if (bRun) bRun.textContent = data.running_profiles ?? 0;
+    const bStop = document.getElementById('badge-count-stopped');
+    if (bStop) bStop.textContent = Math.max(0, (data.total_profiles ?? 0) - (data.running_profiles ?? 0));
 
     const pAll = document.getElementById('pill-count-all');
-    if (pAll) pAll.textContent = data.total_profiles;
+    if (pAll) pAll.textContent = data.total_profiles ?? 0;
     const pRun = document.getElementById('pill-count-running');
-    if (pRun) pRun.textContent = data.running_profiles;
+    if (pRun) pRun.textContent = data.running_profiles ?? 0;
     const pStop = document.getElementById('pill-count-stopped');
-    if (pStop) pStop.textContent = data.total_profiles - data.running_profiles;
+    if (pStop) pStop.textContent = Math.max(0, (data.total_profiles ?? 0) - (data.running_profiles ?? 0));
   } catch (err) {
     // silent background telemetry poll
   }
@@ -1514,6 +1529,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (!isAdminUser()) {
     const launcherBtn = document.getElementById('btn-topbar-launcher');
     if (launcherBtn) launcherBtn.style.display = 'none';
+    const ramCard = document.getElementById('m-ram')?.closest('.metric-card');
+    if (ramCard) ramCard.remove();
+    const diskCard = document.getElementById('m-disk')?.closest('.metric-card');
+    if (diskCard) diskCard.remove();
   }
   initColorPalettes();
   await fetchTelemetry();

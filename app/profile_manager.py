@@ -500,11 +500,19 @@ def reassign_profiles(old_owner: Optional[str], new_owner: str) -> int:
 
 
 def system_telemetry(owner: Optional[str] = None) -> dict:
+    profiles = list_profiles(owner=owner)
+    running_count = sum(1 for p in profiles if p["status"] == "running")
+
+    if owner:
+        # User-facing telemetry: strictly isolate to their own counts; never leak host memory/disk
+        return {
+            "total_profiles": len(profiles),
+            "running_profiles": running_count,
+        }
+
     cpu_percent = psutil.cpu_percent(interval=None)
     mem = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
-    profiles = list_profiles(owner=owner)
-    running_count = sum(1 for p in profiles if p["status"] == "running")
     total_storage_mb = sum(p["size_mb"] for p in profiles)
 
     return {

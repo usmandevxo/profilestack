@@ -107,3 +107,43 @@ class DocsAndDesktopAccessTests(unittest.IsolatedAsyncioTestCase):
             admin_cookies = {auth.COOKIE_NAME: self.admin_session}
             res_admin_sh = await client.get("/install-launcher.sh", cookies=admin_cookies)
             self.assertIn(res_admin_sh.status_code, (200, 404))  # 200 if file exists on disk
+
+    async def test_telemetry_and_memory_storage_hidden_from_regular_users(self):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="https://testserver",
+            follow_redirects=False,
+        ) as client:
+            user_cookies = {auth.COOKIE_NAME: self.alice_session}
+            admin_cookies = {auth.COOKIE_NAME: self.admin_session}
+
+            # 1. UI HTML: Regular user dashboard must NOT contain Server Memory Load or Profiles Storage
+            res_user_ui = await client.get("/", cookies=user_cookies)
+            self.assertEqual(res_user_ui.status_code, 200)
+            self.assertNotIn("Server Memory Load", res_user_ui.text)
+            self.assertNotIn("Profiles Storage", res_user_ui.text)
+
+            # 2. UI HTML: Admin dashboard must contain Server Memory Load and Profiles Storage
+            res_admin_ui = await client.get("/", cookies=admin_cookies)
+            self.assertEqual(res_admin_ui.status_code, 200)
+            self.assertIn("Server Memory Load", res_admin_ui.text)
+            self.assertIn("Profiles Storage", res_admin_ui.text)
+
+            # 3. API Telemetry: Regular user API response must NOT leak server RAM or storage metrics
+            res_user_tel = await client.get("/api/telemetry", cookies=user_cookies)
+            self.assertEqual(res_user_tel.status_code, 200)
+            user_data = res_user_tel.json()
+            self.assertNotIn("ram_used_gb", user_data)
+            self.assertNotIn("ram_total_gb", user_data)
+            self.assertNotIn("storage_profiles_mb", user_data)
+            self.assertNotIn("disk_used_gb", user_data)
+            self.assertIn("total_profiles", user_data)
+            self.assertIn("running_profiles", user_data)
+
+            # 4. API Telemetry: Admin API response must contain server telemetry
+            res_admin_tel = await client.get("/api/telemetry", cookies=admin_cookies)
+            self.assertEqual(res_admin_tel.status_code, 200)
+            admin_data = res_admin_tel.json()
+            self.assertIn("ram_used_gb", admin_data)
+            self.assertIn("ram_total_gb", admin_data)
+            self.assertIn("storage_profiles_mb", admin_data)

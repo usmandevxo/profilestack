@@ -246,6 +246,7 @@
             </div>
           </div>
 
+          {% if user and user.role == 'admin' %}
           <div class="metric-card">
             <div class="metric-icon-wrap metric-icon-purple">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -271,6 +272,7 @@
               <span class="metric-label">Profiles Storage</span>
             </div>
           </div>
+          {% endif %}
         </div>
 
         <!-- Command Strip -->
@@ -1013,6 +1015,6 @@ async with stdio_client(params) as (read, write):
     window.__CURRENT_USER_ROLE__ = "{{ user.role if user and user.role else 'user' }}";
     window.__CURRENT_USERNAME__ = "{{ user.username if user and user.username else '' }}";
   </script>
-  <script src="/static/js/app.js?v=20261105_v6"></script>
+  <script src="/static/js/app.js?v=20261105_v7"></script>
 </body>
 </html>

@@ -701,17 +701,22 @@ async def delete_user_endpoint(username: str, request: Request, reassign_to: Opt
 # ── System Telemetry ──────────────────────────────────────────────────────────
 @app.get("/api/telemetry")
 async def get_telemetry(request: Request, demo: Optional[str] = None):
-    if demo == "1" or request.query_params.get("demo") == "1":
-        return DUMMY_TELEMETRY
     user = getattr(request.state, "user", None)
     is_admin = user and user.get("role") == "admin"
-    telemetry = pm.system_telemetry()
-    if not is_admin and user:
-        uname = user.get("username", "")
-        user_profiles = pm.list_profiles(owner=uname)
-        telemetry["total_profiles"] = len(user_profiles)
-        telemetry["running_profiles"] = sum(1 for p in user_profiles if p.get("status") == "running")
-    return telemetry
+
+    if demo == "1" or request.query_params.get("demo") == "1":
+        if not is_admin:
+            return {
+                "total_profiles": DUMMY_TELEMETRY.get("total_profiles", 0),
+                "running_profiles": DUMMY_TELEMETRY.get("running_profiles", 0),
+            }
+        return DUMMY_TELEMETRY
+
+    if not is_admin:
+        owner = user.get("username", "") if user else ""
+        return pm.system_telemetry(owner=owner)
+
+    return pm.system_telemetry(owner=None)
 
 
 # ── Folders Management ────────────────────────────────────────────────────────
