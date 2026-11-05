@@ -132,8 +132,7 @@ def save_users(users: Dict[str, dict]) -> None:
 
 def init_default_user(username: str = "admin", password: str = "admin") -> None:
     users = load_users()
-    existing_lower = {u.lower(): u for u in users.keys()}
-    if username.lower() not in existing_lower:
+    if not users:
         users[username] = {
             "username": username,
             "password_hash": _hash_password(password),
@@ -340,11 +339,8 @@ def admin_reset_password(username: str, new_password: str, preserve_token: Optio
     destroy_all_user_sessions(username, except_token=preserve_token)
 
 
-def delete_user(username: str, current_username: Optional[str] = None) -> bool:
+def delete_user(username: str, current_username: Optional[str] = None, reassign_to: Optional[str] = None) -> bool:
     username = username.strip()
-    if username.lower() == "admin":
-        raise ValueError("The primary administrator account 'admin' cannot be deleted.")
-
     if current_username and username.lower() == current_username.strip().lower():
         raise ValueError("You cannot delete your own active administrator account.")
 
@@ -363,7 +359,7 @@ def delete_user(username: str, current_username: Optional[str] = None) -> bool:
     if target_user.get("role") == "admin":
         active_admins = [
             u for u in users.values()
-            if u.get("role") == "admin" and u.get("username", "").lower() != username.lower()
+            if u.get("role") == "admin" and u.get("username", "").lower() != username.lower() and u.get("status", "active") == "active"
         ]
         if not active_admins:
             raise ValueError("Cannot delete the only administrator account.")
@@ -371,37 +367,61 @@ def delete_user(username: str, current_username: Optional[str] = None) -> bool:
     # 1. Terminate all active sessions immediately
     destroy_all_user_sessions(username)
 
-    # 2. Revoke all user API keys
-    try:
-        from app import api_key_store as store
-        user_keys = store.list_keys(owner=username)
-        for k in user_keys:
-            store.revoke_key(k["id"])
-    except Exception:
-        pass
+    if reassign_to:
+        target_reassign_user = get_user(reassign_to)
+        if not target_reassign_user:
+            raise ValueError(f"Target reassign user '{reassign_to}' does not exist.")
+        reassign_name = target_reassign_user["username"]
 
-    # 3. Clean up user's profiles and folders
-    try:
-        from app import profile_manager as pm
-        user_profiles = pm.list_profiles(owner=username)
-        for p in user_profiles:
-            try:
-                pm.delete_profile(p["name"])
-            except Exception:
-                pass
-    except Exception:
-        pass
+        try:
+            from app import api_key_store as store
+            store.reassign_keys(old_owner=username, new_owner=reassign_name)
+        except Exception:
+            pass
 
-    try:
-        from app import folder_manager as fm
-        folders = fm.load_folders(owner=username)
-        for f in folders:
-            try:
-                fm.delete_folder(f["id"])
-            except Exception:
-                pass
-    except Exception:
-        pass
+        try:
+            from app import profile_manager as pm
+            pm.reassign_profiles(old_owner=username, new_owner=reassign_name)
+        except Exception:
+            pass
+
+        try:
+            from app import folder_manager as fm
+            fm.reassign_folders(old_owner=username, new_owner=reassign_name)
+        except Exception:
+            pass
+    else:
+        # 2. Revoke all user API keys
+        try:
+            from app import api_key_store as store
+            user_keys = store.list_keys(owner=username)
+            for k in user_keys:
+                store.revoke_key(k["id"])
+        except Exception:
+            pass
+
+        # 3. Clean up user's profiles and folders
+        try:
+            from app import profile_manager as pm
+            user_profiles = pm.list_profiles(owner=username)
+            for p in user_profiles:
+                try:
+                    pm.delete_profile(p["name"])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        try:
+            from app import folder_manager as fm
+            folders = fm.load_folders(owner=username)
+            for f in folders:
+                try:
+                    fm.delete_folder(f["id"])
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # 4. Remove from users store
     del users[target_key]
@@ -554,6 +574,7 @@ if __name__ == "__main__":
         print("  python3 -m app.auth_manager list")
         print("  python3 -m app.auth_manager reset <username> <new_password>")
         print("  python3 -m app.auth_manager add <username> <password> [role]")
+        print("  python3 -m app.auth_manager delete <username> [--reassign <target>]")
         sys.exit(0)
 
     cmd = args[0]
@@ -577,6 +598,19 @@ if __name__ == "__main__":
         user_role = args[3] if len(args) > 3 else "user"
         create_user(target, pwd, role=user_role)
         print(f"User '{target}' created with role '{user_role}'.")
+    elif cmd == "delete":
+        if len(args) < 2:
+            print("Error: Missing argument. Usage: python3 -m app.auth_manager delete <username> [--reassign <target>]")
+            sys.exit(1)
+        target = args[1]
+        reassign = None
+        if len(args) >= 4 and args[2] in ("--reassign", "--reassign-to"):
+            reassign = args[3]
+        delete_user(target, reassign_to=reassign)
+        msg = f"User '{target}' deleted successfully."
+        if reassign:
+            msg += f" Profiles and resources reassigned to '{reassign}'."
+        print(msg)
     else:
         print(f"Unknown command '{cmd}'. Run with --help for usage.")
         sys.exit(1)

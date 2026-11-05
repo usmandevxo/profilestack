@@ -623,15 +623,15 @@ async def auth_self_reset_password_endpoint(req: ResetPasswordRequest, request: 
 
 
 @app.delete("/api/users/{username}")
-async def delete_user_endpoint(username: str, request: Request):
+async def delete_user_endpoint(username: str, request: Request, reassign_to: Optional[str] = None):
     user = getattr(request.state, "user", None)
     if not user or user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Administrator access required.")
     if str(user.get("username") or "").lower() == username.lower():
         raise HTTPException(status_code=400, detail="Cannot delete your own administrator account.")
     try:
-        auth.delete_user(username)
-        return {"status": "success", "deleted": username}
+        auth.delete_user(username, current_username=user.get("username"), reassign_to=reassign_to)
+        return {"status": "success", "deleted": username, "reassigned_to": reassign_to}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

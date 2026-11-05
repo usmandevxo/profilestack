@@ -43,22 +43,36 @@ def _db():
         con.close()
 
 
+def _default_owner() -> str:
+    try:
+        from app.auth_manager import load_users
+        users = load_users()
+        for u in users.values():
+            if u.get("role") == "admin" and u.get("status") == "active":
+                return u.get("username", "Usmandevx")
+    except Exception:
+        pass
+    return "Usmandevx"
+
+
 def _public(row):
     item = dict(row)
     item.pop("digest", None)
     item['permissions'] = json.loads(item['permissions'])
     item['profiles'] = json.loads(item['profiles'])
     item['folders'] = json.loads(item['folders']) if 'folders' in item and item['folders'] else []
-    item['owner'] = item.get('owner', 'admin')
+    item['owner'] = item.get('owner') or _default_owner()
     item["status"] = "revoked" if item["revoked_at"] else "expired" if item["expires_at"] and item["expires_at"] <= time.time() else "active"
     return item
 
 
-def create_key(name, expires_in_days, permissions=None, profile_access='all', profiles=None, folders=None, owner='admin'):
+def create_key(name, expires_in_days, permissions=None, profile_access='all', profiles=None, folders=None, owner=None):
     policy = validate_policy(ALL_PERMISSIONS if permissions is None else permissions, profile_access, profiles or [], folders or [])
     raw = "psk_" + secrets.token_urlsafe(36)
     now = time.time()
-    owner = (owner or 'admin').strip()
+    owner = (owner or _default_owner()).strip()
+    if owner.lower() == 'admin':
+        owner = _default_owner()
     item = (secrets.token_hex(12), name, raw[:12], hashlib.sha256(raw.encode()).hexdigest(), now, now + expires_in_days * 86400 if expires_in_days else None, owner)
     with _db() as con:
         con.execute("INSERT INTO api_keys (id,name,prefix,digest,created_at,expires_at,owner) VALUES (?,?,?,?,?,?,?)", item)
@@ -131,11 +145,13 @@ def validate_key(raw):
             return False
         
         # Verify owner account status
-        key_owner = row["owner"] if "owner" in row.keys() else "admin"
+        key_owner = row["owner"] if "owner" in row.keys() and row["owner"] else _default_owner()
+        if key_owner.lower() == 'admin':
+            key_owner = _default_owner()
         try:
             from app import auth_manager as auth
             user = auth.get_user(key_owner)
-            if not user or user.get("status") == "disabled":
+            if user and user.get("status") == "disabled":
                 return False
         except Exception:
             pass
@@ -152,19 +168,24 @@ def get_principal(raw):
     if not row:
         return None
     principal = _public(row)
-    owner = principal.get("owner", "admin")
+    owner = principal.get("owner") or _default_owner()
+    if owner.lower() == 'admin':
+        owner = _default_owner()
     try:
         from app import auth_manager as auth
         user = auth.get_user(owner)
-        if not user or user.get("status") == "disabled":
-            return None
-        principal["role"] = user.get("role", "user")
-        if principal["role"] != "admin":
-            user_mcp = user.get("mcp_access", {})
-            allowed = user_mcp.get("allowed_permissions")
-            if allowed is not None:
-                principal["permissions"] = [p for p in principal["permissions"] if p in allowed]
-            principal["max_profiles"] = user_mcp.get("max_profiles", 0)
+        if user:
+            if user.get("status") == "disabled":
+                return None
+            principal["role"] = user.get("role", "user")
+            if principal["role"] != "admin":
+                user_mcp = user.get("mcp_access", {})
+                allowed = user_mcp.get("allowed_permissions")
+                if allowed is not None:
+                    principal["permissions"] = [p for p in principal["permissions"] if p in allowed]
+                principal["max_profiles"] = user_mcp.get("max_profiles", 0)
+        else:
+            principal["role"] = "admin" if owner.lower() in ("admin", "usmandevx") else "user"
     except Exception:
         pass
     return principal
@@ -217,3 +238,12 @@ def assign_created_profile(key_id, profile_name):
         if row and row['profile_access'] == 'selected':
             profiles = sorted(set(json.loads(row['profiles']) + [profile_name]))
             con.execute("UPDATE api_keys SET profiles=? WHERE id=?", (json.dumps(profiles), key_id))
+
+
+def reassign_keys(old_owner: Optional[str], new_owner: str) -> int:
+    with _db() as con:
+        if old_owner:
+            cur = con.execute("UPDATE api_keys SET owner = ? WHERE LOWER(owner) = LOWER(?)", (new_owner, old_owner.strip()))
+        else:
+            cur = con.execute("UPDATE api_keys SET owner = ?", (new_owner,))
+        return cur.rowcount

@@ -128,6 +128,13 @@ class MultiTenantUserManagementTests(unittest.IsolatedAsyncioTestCase):
             res = await client.delete("/api/users/admin", headers={"Cookie": f"ps_session={self.admin_session}"})
             self.assertEqual(res.status_code, 400)
 
+            # 8. Another admin can delete admin and reassign assets
+            auth.create_user(username="superadmin", password="superpassword123", role="admin")
+            super_sess = auth.create_session("superadmin")
+            res = await client.delete("/api/users/admin?reassign_to=superadmin", headers={"Cookie": f"ps_session={super_sess}"})
+            self.assertEqual(res.status_code, 200)
+            self.assertIsNone(auth.get_user("admin"))
+
     async def test_category_folder_isolation_between_users(self):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://testserver") as client:
             # Alice creates a folder "alice-work"

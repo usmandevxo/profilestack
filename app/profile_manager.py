@@ -19,6 +19,18 @@ import app.folder_manager as fm
 _docker = DockerEngine()
 
 
+def _default_owner() -> str:
+    try:
+        from app.auth_manager import load_users
+        users = load_users()
+        for u in users.values():
+            if u.get("role") == "admin" and u.get("status") == "active":
+                return u.get("username", "Usmandevx")
+    except Exception:
+        pass
+    return "Usmandevx"
+
+
 def _load_registry() -> dict:
     if REGISTRY_FILE.exists():
         try:
@@ -30,7 +42,7 @@ def _load_registry() -> dict:
                         item["folder"] = fm.DEFAULT_FOLDER_ID
                         changed = True
                     if "owner" not in item:
-                        item["owner"] = "admin"
+                        item["owner"] = _default_owner()
                         changed = True
                 if changed:
                     _save_registry(data)
@@ -167,11 +179,11 @@ def create_profile(
     host_mount: str = "",
     note: str = "",
     folder: str = fm.DEFAULT_FOLDER_ID,
-    owner: str = "admin",
+    owner: Optional[str] = None,
 ) -> dict:
     name = validate_profile_name(name)
     folder = (folder or fm.DEFAULT_FOLDER_ID).strip().lower()
-    owner = (owner or "admin").strip()
+    owner = (owner or _default_owner()).strip()
 
     # Check user profile quota if applicable
     try:
@@ -196,10 +208,12 @@ def create_profile(
         except Exception:
             folder = fm.DEFAULT_FOLDER_ID
     else:
-        if owner.lower() != "admin" and folder_obj.get("owner", "admin").lower() != owner.lower():
-            # Fall back to user's default folder
-            user_folders = fm.load_folders(owner=owner)
-            folder = user_folders[0]["id"] if user_folders else fm.DEFAULT_FOLDER_ID
+        folder_owner = folder_obj.get("owner", "").lower()
+        if folder_owner and owner.lower() != folder_owner:
+            from app.auth_manager import is_admin
+            if not is_admin(owner):
+                user_folders = fm.load_folders(owner=owner)
+                folder = user_folders[0]["id"] if user_folders else fm.DEFAULT_FOLDER_ID
 
     reg = _load_registry()
     if name in reg:
@@ -439,6 +453,20 @@ def restart_profile(name: str, owner: Optional[str] = None) -> dict:
     stop_profile(name, owner=owner)
     time.sleep(0.5)
     return start_profile(name, owner=owner)
+
+
+def reassign_profiles(old_owner: Optional[str], new_owner: str) -> int:
+    registry = _load_registry()
+    count = 0
+    old_lower = old_owner.strip().lower() if old_owner else None
+    for name, p in registry.items():
+        curr_owner = str(p.get("owner", "admin")).lower()
+        if old_lower is None or curr_owner == old_lower:
+            p["owner"] = new_owner
+            count += 1
+    if count > 0:
+        _save_registry(registry)
+    return count
 
 
 def system_telemetry(owner: Optional[str] = None) -> dict:

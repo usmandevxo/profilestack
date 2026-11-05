@@ -50,6 +50,18 @@ def get_user_default_folder(owner: str) -> dict:
     return create_folder(name="General", folder_id="default", owner=owner)
 
 
+def _default_owner() -> str:
+    try:
+        from app.auth_manager import load_users
+        users = load_users()
+        for u in users.values():
+            if u.get("role") == "admin" and u.get("status") == "active":
+                return u.get("username", "Usmandevx")
+    except Exception:
+        pass
+    return "Usmandevx"
+
+
 def load_folders(owner: Optional[str] = None) -> List[dict]:
     folders = []
     if FOLDERS_FILE.exists():
@@ -62,10 +74,10 @@ def load_folders(owner: Optional[str] = None) -> List[dict]:
             folders = []
 
     modified = False
-    # Ensure all existing folders have an owner (legacy defaults to admin)
+    # Ensure all existing folders have an owner (legacy defaults to active admin)
     for f in folders:
         if "owner" not in f:
-            f["owner"] = "admin"
+            f["owner"] = _default_owner()
             modified = True
 
     # Ensure system default folder is present
@@ -310,3 +322,17 @@ def list_folders_with_stats(owner: Optional[str] = None) -> List[dict]:
         result.append(item)
 
     return result
+
+
+def reassign_folders(old_owner: Optional[str], new_owner: str) -> int:
+    folders = load_folders()
+    count = 0
+    old_lower = old_owner.strip().lower() if old_owner else None
+    for f in folders:
+        curr_owner = str(f.get("owner", "admin")).lower()
+        if old_lower is None or curr_owner == old_lower:
+            f["owner"] = new_owner
+            count += 1
+    if count > 0:
+        save_folders(folders)
+    return count
