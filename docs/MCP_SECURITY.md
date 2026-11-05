@@ -1,6 +1,6 @@
 # Remote MCP security
 
-Remote SSE at `https://profilestack.apanel.eu.cc/mcp/sse` requires a private API key on **every** SSE GET and message POST. Browser sessions do not authorize MCP. Local stdio continues to rely on operating-system access controls.
+Remote SSE at `https://profilestack.rerouter.online/mcp/sse` requires a private API key on **every** SSE GET and message POST. Browser sessions do not authorize MCP. Local stdio continues to rely on operating-system access controls.
 
 Supported request headers (choose one):
 
@@ -82,7 +82,7 @@ Only a trusted server administrator should read the file and transfer its value 
 {
   "name": "profilestack",
   "type": "sse",
-  "url": "https://profilestack.apanel.eu.cc/mcp/sse",
+  "url": "https://profilestack.rerouter.online/mcp/sse",
   "headers": {
     "Authorization": "Bearer YOUR_API_KEY"
   }

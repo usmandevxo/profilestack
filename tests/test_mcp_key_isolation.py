@@ -14,7 +14,7 @@ class MCPIsolationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_browser_cannot_inspect_credential_admin_tab(self):
         profile = {"status": "running", "cdp_port": 9401, "host_mount": ""}
-        tabs = [{"type": "page", "url": "https://profilestack.apanel.eu.cc/api-keys"}]
+        tabs = [{"type": "page", "url": "https://profilestack.rerouter.online/api-keys"}]
         with patch.object(tools.pm, "get_profile", return_value=profile), patch.object(tools.cdp, "get_browser_tabs", new=AsyncMock(return_value=tabs)), patch.object(tools.cdp, "evaluate_script", new=AsyncMock(return_value="confidential")) as evaluate:
             result = json.loads(await tools.evaluate_javascript("test", "document.body.innerText"))
             self.assertIn("error", result)
@@ -22,7 +22,7 @@ class MCPIsolationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_all_browser_tools_block_admin_tabs(self):
         profile = {"status": "running", "cdp_port": 9401, "host_mount": ""}
-        tabs = [{"type": "page", "url": "https://profilestack.apanel.eu.cc/api-keys"}]
+        tabs = [{"type": "page", "url": "https://profilestack.rerouter.online/api-keys"}]
         with patch.object(tools.pm, "get_profile", return_value=profile), patch.object(tools.cdp, "get_browser_tabs", new=AsyncMock(return_value=tabs)):
             for fn, args in [(tools.navigate_browser, ("test", "https://example.com")), (tools.get_active_page_details, ("test",)), (tools.evaluate_javascript, ("test", "1")), (tools.click_element, ("test", "button")), (tools.type_into_element, ("test", "input", "x")), (tools.take_screenshot, ("test",))]:
                 result = json.loads(await fn(*args))
@@ -32,7 +32,7 @@ class MCPIsolationTests(unittest.IsolatedAsyncioTestCase):
         profile = {"status": "running", "cdp_port": 9401, "host_mount": ""}
         tabs = [{"type": "page", "url": "https://example.com"}]
         with patch.object(tools.pm, "get_profile", return_value=profile), patch.object(tools.cdp, "get_browser_tabs", new=AsyncMock(return_value=tabs)), patch.object(tools.cdp, "navigate_tab", new=AsyncMock()) as navigate:
-            for url in ["https://profilestack.apanel.eu.cc/api-keys", "http://127.0.0.1:7800/api/api-keys", "file:///www/wwwroot/profilestack/data/mcp-api-key", "http://[::1]:7800", "http://localhost:7800"]:
+            for url in ["https://profilestack.rerouter.online/api-keys", "https://profilestack.apanel.eu.cc/api-keys", "http://127.0.0.1:7800/api/api-keys", "file:///www/wwwroot/profilestack/data/mcp-api-key", "http://[::1]:7800", "http://localhost:7800"]:
                 self.assertIn("error", json.loads(await tools.navigate_browser("test", url)))
             navigate.assert_not_called()
 

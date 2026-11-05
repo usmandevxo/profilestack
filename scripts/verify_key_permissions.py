@@ -13,7 +13,7 @@ from mcp.client.sse import sse_client
 from app import api_key_store as store
 
 logging.disable(logging.CRITICAL)
-BASE = os.environ.get('PROFILESTACK_VERIFY_URL', 'https://profilestack.apanel.eu.cc')
+BASE = os.environ.get('PROFILESTACK_VERIFY_URL', 'https://profilestack.rerouter.online')
 
 
 async def main():

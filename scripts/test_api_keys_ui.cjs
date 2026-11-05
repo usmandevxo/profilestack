@@ -1,7 +1,7 @@
 const { chromium } = require('/www/wwwroot/hermes-design-intelligence/node_modules/playwright');
 const fs = require('fs'); const path = require('path'); const assert = require('assert');
 (async () => {
-  const base = 'https://profilestack.apanel.eu.cc';
+  const base = 'https://profilestack.rerouter.online';
   const testName = 'UI verification ' + Date.now();
   const renamedName = testName + ' renamed';
   const {token} = JSON.parse(fs.readFileSync(path.join(process.env.TMPDIR, 'profilestack-ui-session.json')));

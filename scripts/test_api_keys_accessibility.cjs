@@ -5,8 +5,8 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
  const {token}=JSON.parse(fs.readFileSync(path.join(process.env.TMPDIR,'profilestack-ui-session.json')));
  const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||'/home/ubuntu/.cache/ms-playwright/chromium-1248/chrome-linux-arm64/chrome'});
  const context=await browser.newContext({viewport:{width:375,height:800},reducedMotion:'reduce'});
- await context.addCookies([{name:'ps_session',value:token,url:'https://profilestack.apanel.eu.cc',httpOnly:true,secure:true}]);
- const page=await context.newPage();await page.goto('https://profilestack.apanel.eu.cc/api-keys');await page.waitForFunction(()=>document.querySelector('#ak-active-count').textContent!=='—');
+ await context.addCookies([{name:'ps_session',value:token,url:'https://profilestack.rerouter.online',httpOnly:true,secure:true}]);
+ const page=await context.newPage();await page.goto('https://profilestack.rerouter.online/api-keys');await page.waitForFunction(()=>document.querySelector('#ak-active-count').textContent!=='—');
  let violations=(await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations;
  await page.locator('#ak-create').click();
  for(let i=0;i<8;i++){await page.keyboard.press('Tab');assert(await page.evaluate(()=>document.querySelector('#ak-create-dialog').contains(document.activeElement)));}

@@ -30,7 +30,7 @@ try:
 except Exception:
     pass
 
-DEFAULT_SERVER = "https://profilestack.apanel.eu.cc"
+DEFAULT_SERVER = "https://profilestack.rerouter.online"
 DEFAULT_PORT = 7890
 BASE_LOCAL_DIR = Path.home() / "ProfileStack"
 CONFIG_DIR = BASE_LOCAL_DIR / "config"

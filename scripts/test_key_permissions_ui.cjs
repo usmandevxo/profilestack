@@ -1,7 +1,7 @@
 const {chromium}=require('/www/wwwroot/hermes-design-intelligence/node_modules/playwright');
 const fs=require('fs'), path=require('path'), assert=require('assert');
 (async()=>{
- const base='https://profilestack.apanel.eu.cc';
+ const base='https://profilestack.rerouter.online';
  const {token}=JSON.parse(fs.readFileSync(path.join(process.env.TMPDIR,'profilestack-ui-session.json')));
  const browser=await chromium.launch({headless:true,executablePath:'/home/ubuntu/.cache/ms-playwright/chromium-1248/chrome-linux-arm64/chrome'});
  const context=await browser.newContext({viewport:{width:1440,height:1000}});

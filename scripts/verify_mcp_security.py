@@ -12,7 +12,7 @@ logging.disable(logging.CRITICAL)
 
 
 async def main():
-    base = os.environ.get("PROFILESTACK_VERIFY_URL", "https://profilestack.apanel.eu.cc").rstrip("/")
+    base = os.environ.get("PROFILESTACK_VERIFY_URL", "https://profilestack.rerouter.online").rstrip("/")
     key = os.environ.get("PROFILESTACK_MCP_API_KEY")
     if not key:
         key = (Path(__file__).resolve().parents[1] / "data/mcp-api-key").read_text().strip()

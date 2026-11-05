@@ -42,7 +42,7 @@ except Exception:
     pass
 
 APP_VERSION = "1.3.0"
-DEFAULT_SERVER = "https://profilestack.apanel.eu.cc"
+DEFAULT_SERVER = "https://profilestack.rerouter.online"
 DEFAULT_PORT = 7898
 
 BASE_LOCAL_DIR = Path.home() / "ProfileStack"
@@ -1695,7 +1695,7 @@ UI_HTML = """<!DOCTYPE html>
       <div class="header-actions">
         <div class="telemetry-pill">
           <div class="pulse-dot"></div>
-          <span id="server-status-text">Connected: profilestack.apanel.eu.cc</span>
+          <span id="server-status-text">Connected: profilestack.rerouter.online</span>
         </div>
         <div class="telemetry-pill">
           <span id="summary-counts">0 Profiles • 0 Active</span>
@@ -1785,7 +1785,7 @@ UI_HTML = """<!DOCTYPE html>
 
       <div class="form-group">
         <label class="form-label">Cluster Server URL</label>
-        <input type="text" class="form-control" id="login-server" value="https://profilestack.apanel.eu.cc">
+        <input type="text" class="form-control" id="login-server" value="https://profilestack.rerouter.online">
       </div>
       <div class="form-group">
         <label class="form-label">Username</label>

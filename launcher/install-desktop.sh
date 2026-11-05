@@ -2,7 +2,7 @@
 # ProfileStack Desktop Installer for Linux (CachyOS, Arch, Ubuntu, Debian, Fedora)
 set -e
 
-SERVER_URL="https://profilestack.apanel.eu.cc"
+SERVER_URL="https://profilestack.rerouter.online"
 BIN_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"

@@ -3,7 +3,7 @@ import ipaddress
 from urllib.parse import urlsplit
 
 DENIED = "MCP access to administration or host files is not allowed."
-ADMIN_HOSTS = {"profilestack.apanel.eu.cc"}
+ADMIN_HOSTS = {"profilestack.rerouter.online", "profilestack.apanel.eu.cc"}
 
 
 def check_browser_url(url):

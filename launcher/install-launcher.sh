@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-SERVER_URL="https://profilestack.apanel.eu.cc"
+SERVER_URL="https://profilestack.rerouter.online"
 BIN_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
 CONF_DIR="$HOME/ProfileStack/config"
