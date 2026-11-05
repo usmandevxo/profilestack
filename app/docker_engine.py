@@ -265,12 +265,20 @@ class DockerEngine:
                     "127.0.0.1", "host.docker.internal"
                 ).replace("localhost", "host.docker.internal")
                 env["CHROME_PROXY_PORT"] = str(parsed["port"])
-                command += ["--proxy-server=socks5://127.0.0.1:1081"]
+                command += [
+                    "--proxy-server=socks5://127.0.0.1:1081",
+                    "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+                    "--force-webrtc-ip-handling-policy",
+                ]
             else:
                 proxy_clean = raw_proxy.replace("127.0.0.1", "host.docker.internal").replace(
                     "localhost", "host.docker.internal"
                 )
-                command += [f"--proxy-server={proxy_clean}"]
+                command += [
+                    f"--proxy-server={proxy_clean}",
+                    "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+                    "--force-webrtc-ip-handling-policy",
+                ]
             extra_hosts = {"host.docker.internal": "host-gateway"}
 
         run_kwargs = dict(

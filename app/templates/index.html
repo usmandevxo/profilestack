@@ -907,6 +907,11 @@ async with stdio_client(params) as (read, write):
               <input type="number" id="new-user-max-profiles" class="form-input" value="10" min="0" max="1000">
             </div>
           </div>
+          <div style="margin-bottom:12px;">
+            <label class="form-label" style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Assigned Stealth Proxy (Optional)</label>
+            <input type="text" id="new-user-assigned-proxy" class="form-input" placeholder="socks5://user:pass@host:port or http://host:port">
+            <span style="font-size:11px; color:var(--text-dim); display:block; margin-top:2px;">Silently applied to all profiles for this user. The user is not told their profiles are proxied, shielding the server IP. Overridden if the user adds their own proxy.</span>
+          </div>
           <div style="display:flex; justify-content:flex-end; gap:8px;">
             <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAddUserForm(false)">Cancel</button>
             <button type="submit" class="btn btn-primary btn-sm" id="btn-submit-new-user">Create User</button>
@@ -921,7 +926,7 @@ async with stdio_client(params) as (read, write):
                 <th style="padding:10px 12px; font-weight:600; color:var(--text-muted);">Role</th>
                 <th style="padding:10px 12px; font-weight:600; color:var(--text-muted);">Status</th>
                 <th style="padding:10px 12px; font-weight:600; color:var(--text-muted);">MCP Profile</th>
-                <th style="padding:10px 12px; font-weight:600; color:var(--text-muted);">Quota</th>
+                <th style="padding:10px 12px; font-weight:600; color:var(--text-muted);">Stealth Proxy</th>
                 <th style="padding:10px 12px; font-weight:600; color:var(--text-muted); text-align:right;">Actions</th>
               </tr>
             </thead>
@@ -963,6 +968,44 @@ async with stdio_client(params) as (read, write):
     </div>
   </div>
 
+  <!-- Set Stealth Proxy Modal (Admin Only) -->
+  <div class="modal-overlay" id="modal-user-set-proxy">
+    <div class="modal modal-sm" style="max-width: 460px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+            <line x1="6" y1="6" x2="6.01" y2="6"></line>
+            <line x1="6" y1="18" x2="6.01" y2="18"></line>
+          </svg>
+          <h3 style="margin:0; font-size:15px; font-weight:700;">Stealth Proxy</h3>
+        </div>
+        <button class="modal-close-btn" onclick="closeModal('modal-user-set-proxy')" aria-label="Close dialog" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <form id="user-set-proxy-form">
+        <div class="modal-body" style="padding:16px 20px;">
+          <input type="hidden" id="user-proxy-username">
+          <p style="font-size:12.5px; color:var(--text-muted); margin-bottom:12px;">Configure default stealth proxy for <strong id="user-proxy-user-label" style="color:var(--text-main);"></strong>.</p>
+          <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:10px 12px; margin-bottom:12px; font-size:11.5px; color:#166534; line-height:1.4;">
+            <strong>Privacy &amp; Stealth:</strong> Silently injected into all profiles for this user to protect the server IP. Standard users cannot see this proxy or know their profiles are proxied. If the user adds their own custom proxy to a profile, their custom proxy will be used instead.
+          </div>
+          <label class="form-label" style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Proxy URL / Endpoint</label>
+          <input type="text" id="user-proxy-input" class="form-input" placeholder="e.g. socks5://user:pass@host:port or http://host:port">
+        </div>
+        <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-clear-user-proxy" onclick="clearUserAssignedProxy()">Clear Proxy</button>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal('modal-user-set-proxy')">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-sm">Save Proxy</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Toast Container -->
   <div id="toast-container"></div>
 
@@ -970,6 +1013,6 @@ async with stdio_client(params) as (read, write):
     window.__CURRENT_USER_ROLE__ = "{{ user.role if user and user.role else 'user' }}";
     window.__CURRENT_USERNAME__ = "{{ user.username if user and user.username else '' }}";
   </script>
-  <script src="/static/js/app.js?v=20261105_v5"></script>
+  <script src="/static/js/app.js?v=20261105_v6"></script>
 </body>
 </html>

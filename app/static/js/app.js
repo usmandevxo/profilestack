@@ -1344,7 +1344,9 @@ function renderUsersTable(users) {
       ? '<span style="background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:10px; font-weight:600; font-size:11px;">Active</span>'
       : '<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:10px; font-weight:600; font-size:11px;">Disabled</span>';
     const mcpBadge = `<span style="background:#f1f5f9; color:#475569; padding:2px 8px; border-radius:10px; font-weight:500; font-size:11px;">${esc(u.mcp_profile || 'standard')}</span>`;
-    const quota = u.mcp_access?.max_profiles ? `${u.mcp_access.max_profiles} max` : 'Unlimited';
+    const proxyBadge = u.assigned_proxy
+      ? `<span style="background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; padding:2px 8px; border-radius:10px; font-weight:500; font-size:11px; max-width:130px; display:inline-block; overflow:hidden; text-overflow:ellipsis; vertical-align:middle;" title="${esc(u.assigned_proxy)}">${esc(u.assigned_proxy)}</span>`
+      : '<span style="background:#f8fafc; color:#94a3b8; padding:2px 8px; border-radius:10px; font-weight:500; font-size:11px;">Direct</span>';
 
     return `
       <tr style="border-bottom:1px solid var(--border);">
@@ -1355,9 +1357,10 @@ function renderUsersTable(users) {
         <td style="padding:10px 12px;">${roleBadge}</td>
         <td style="padding:10px 12px;">${statusBadge}</td>
         <td style="padding:10px 12px;">${mcpBadge}</td>
-        <td style="padding:10px 12px; color:var(--text-muted);">${quota}</td>
+        <td style="padding:10px 12px;">${proxyBadge}</td>
         <td style="padding:10px 12px; text-align:right;">
           <div style="display:flex; justify-content:flex-end; gap:6px;">
+            <button class="btn btn-secondary btn-sm" style="padding:3px 7px; font-size:11px;" onclick="promptSetUserProxy('${esc(u.username)}', '${esc(u.assigned_proxy || '')}')">Proxy</button>
             <button class="btn btn-secondary btn-sm" style="padding:3px 7px; font-size:11px;" onclick="promptResetPassword('${esc(u.username)}')">Reset Pwd</button>
             <button class="btn btn-secondary btn-sm" style="padding:3px 7px; font-size:11px;" onclick="toggleUserStatus('${esc(u.username)}', '${u.status}')">${u.status === 'active' ? 'Disable' : 'Enable'}</button>
             <button class="btn btn-danger btn-sm" style="padding:3px 7px; font-size:11px;" onclick="deleteUserAccount('${esc(u.username)}')">Delete</button>
@@ -1375,6 +1378,7 @@ document.getElementById('user-create-form')?.addEventListener('submit', async (e
   const role = document.getElementById('new-user-role').value;
   const mcp_profile = document.getElementById('new-user-mcp-profile').value;
   const max_profiles = parseInt(document.getElementById('new-user-max-profiles').value, 10) || 0;
+  const assigned_proxy = document.getElementById('new-user-assigned-proxy')?.value.trim() || null;
 
   try {
     const res = await fetch('/api/users', {
@@ -1385,7 +1389,8 @@ document.getElementById('user-create-form')?.addEventListener('submit', async (e
         password,
         role,
         mcp_profile,
-        max_profiles
+        max_profiles,
+        assigned_proxy
       })
     });
     const data = await res.json();
@@ -1393,6 +1398,51 @@ document.getElementById('user-create-form')?.addEventListener('submit', async (e
     showToast(`User ${username} created successfully`, 'success');
     document.getElementById('user-create-form').reset();
     toggleAddUserForm(false);
+    await fetchUsersList();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+function promptSetUserProxy(username, currentProxy) {
+  document.getElementById('user-proxy-username').value = username;
+  document.getElementById('user-proxy-user-label').textContent = username;
+  document.getElementById('user-proxy-input').value = currentProxy || '';
+  openModal('modal-user-set-proxy');
+}
+
+async function clearUserAssignedProxy() {
+  const username = document.getElementById('user-proxy-username').value;
+  if (!username) return;
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(username)}/proxy`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to clear proxy');
+    showToast(`Stealth proxy removed for ${username}`, 'success');
+    closeModal('modal-user-set-proxy');
+    await fetchUsersList();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+document.getElementById('user-set-proxy-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = document.getElementById('user-proxy-username').value;
+  const proxy = document.getElementById('user-proxy-input').value.trim();
+
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(username)}/proxy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proxy })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to save proxy');
+    showToast(`Stealth proxy updated for ${username}`, 'success');
+    closeModal('modal-user-set-proxy');
     await fetchUsersList();
   } catch (err) {
     showToast(err.message, 'error');

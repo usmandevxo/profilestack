@@ -28,6 +28,7 @@ data/*.sqlite3*
 # Logs & Temporary Files
 *.log
 *.tmp
+*.pdf
 .DS_Store
 Thumbs.db
 launcher/dist/

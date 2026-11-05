@@ -84,12 +84,17 @@ def _normalize_mcp_access(role: str, mcp_access: Optional[dict] = None) -> dict:
     }
 
 
-def _sanitize_user(user: dict) -> dict:
+def _sanitize_user(user: dict, is_admin: bool = False) -> dict:
     sanitized = dict(user)
     sanitized.pop("password_hash", None)
+    sanitized.pop("salt", None)
     sanitized.setdefault("status", "active")
     sanitized.setdefault("role", "user")
     sanitized["mcp_access"] = _normalize_mcp_access(sanitized["role"], sanitized.get("mcp_access"))
+    if is_admin:
+        sanitized.setdefault("assigned_proxy", user.get("assigned_proxy", "") or "")
+    else:
+        sanitized.pop("assigned_proxy", None)
     return sanitized
 
 
@@ -145,18 +150,18 @@ def init_default_user(username: str = "admin", password: str = "admin") -> None:
         save_users(users)
 
 
-def list_users() -> List[dict]:
+def list_users(is_admin: bool = True) -> List[dict]:
     users = load_users()
-    return [_sanitize_user(u) for u in users.values() if isinstance(u, dict)]
+    return [_sanitize_user(u, is_admin=is_admin) for u in users.values() if isinstance(u, dict)]
 
 
-def get_user(username: str) -> Optional[dict]:
+def get_user(username: str, is_admin: bool = False) -> Optional[dict]:
     if not username:
         return None
     users = load_users()
     for k, u in users.items():
         if k.lower() == username.strip().lower() and isinstance(u, dict):
-            return _sanitize_user(u)
+            return _sanitize_user(u, is_admin=is_admin)
     return None
 
 
@@ -169,9 +174,39 @@ def get_user_internal(username: str) -> Optional[dict]:
             u_copy = dict(u)
             u_copy.setdefault("status", "active")
             u_copy.setdefault("role", "user")
+            u_copy.setdefault("assigned_proxy", "")
             u_copy["mcp_access"] = _normalize_mcp_access(u_copy["role"], u_copy.get("mcp_access"))
             return u_copy
     return None
+
+
+def get_user_assigned_proxy(username: str) -> str:
+    """Return the admin-assigned stealth proxy for the user, or empty string."""
+    u = get_user_internal(username)
+    if not u:
+        return ""
+    return str(u.get("assigned_proxy") or "").strip()
+
+
+def set_user_proxy(username: str, proxy: Optional[str]) -> dict:
+    """Admin-managed configuration of a stealth proxy for a user."""
+    users = load_users()
+    target_key = None
+    target_user = None
+    for k, u in users.items():
+        if k.lower() == username.strip().lower():
+            target_key = k
+            target_user = u
+            break
+
+    if not target_user or not target_key:
+        raise ValueError(f"User '{username}' not found.")
+
+    clean_proxy = (proxy or "").strip()
+    target_user["assigned_proxy"] = clean_proxy
+    users[target_key] = target_user
+    save_users(users)
+    return _sanitize_user(target_user, is_admin=True)
 
 
 def is_admin(user_or_username) -> bool:
@@ -190,7 +225,8 @@ def create_user(
     status: str = "active",
     mcp_profile: Optional[str] = "standard",
     mcp_access: Optional[dict] = None,
-    notes: str = ""
+    notes: str = "",
+    assigned_proxy: Optional[str] = None
 ) -> dict:
     username = (username or "").strip()
     if not re.match(r"^[a-zA-Z0-9_\-\.]{3,32}$", username):
@@ -228,7 +264,8 @@ def create_user(
         "notes": notes or "",
         "created_at": now_str,
         "last_login": None,
-        "mcp_access": normalized_mcp
+        "mcp_access": normalized_mcp,
+        "assigned_proxy": (assigned_proxy or "").strip()
     }
     users[username] = user_record
     save_users(users)
@@ -248,7 +285,7 @@ def create_user(
     except Exception:
         pass
 
-    return _sanitize_user(user_record)
+    return _sanitize_user(user_record, is_admin=True)
 
 
 def update_user(
@@ -258,7 +295,8 @@ def update_user(
     mcp_profile: Optional[str] = None,
     mcp_access: Optional[dict] = None,
     password: Optional[str] = None,
-    notes: Optional[str] = None
+    notes: Optional[str] = None,
+    assigned_proxy: Optional[str] = None
 ) -> dict:
     users = load_users()
     target_key = None
@@ -312,9 +350,12 @@ def update_user(
             raise ValueError("Password must be at least 5 characters.")
         target_user["password_hash"] = _hash_password(password)
 
+    if assigned_proxy is not None:
+        target_user["assigned_proxy"] = assigned_proxy.strip()
+
     users[target_key] = target_user
     save_users(users)
-    return _sanitize_user(target_user)
+    return _sanitize_user(target_user, is_admin=True)
 
 
 def admin_reset_password(username: str, new_password: str, preserve_token: Optional[str] = None) -> None:
@@ -575,12 +616,16 @@ if __name__ == "__main__":
         print("  python3 -m app.auth_manager reset <username> <new_password>")
         print("  python3 -m app.auth_manager add <username> <password> [role]")
         print("  python3 -m app.auth_manager delete <username> [--reassign <target>]")
+        print("  python3 -m app.auth_manager set-proxy <username> <proxy_url>")
+        print("  python3 -m app.auth_manager get-proxy <username>")
+        print("  python3 -m app.auth_manager clear-proxy <username>")
         sys.exit(0)
 
     cmd = args[0]
     if cmd == "list":
-        for u in list_users():
-            print(f"- {u['username']} (role={u['role']}, status={u['status']}, mcp={u.get('mcp_profile')})")
+        for u in list_users(is_admin=True):
+            proxy_info = f", proxy={u.get('assigned_proxy')}" if u.get("assigned_proxy") else ""
+            print(f"- {u['username']} (role={u['role']}, status={u['status']}, mcp={u.get('mcp_profile')}{proxy_info})")
     elif cmd == "reset":
         if len(args) < 3:
             print("Error: Missing arguments. Usage: python3 -m app.auth_manager reset <username> <new_password>")
@@ -591,13 +636,39 @@ if __name__ == "__main__":
         print(f"Password reset successfully for user '{target}'.")
     elif cmd == "add":
         if len(args) < 3:
-            print("Error: Missing arguments. Usage: python3 -m app.auth_manager add <username> <password> [role]")
+            print("Error: Missing arguments. Usage: python3 -m app.auth_manager add <username> <password> [role] [proxy]")
             sys.exit(1)
         target = args[1]
         pwd = args[2]
         user_role = args[3] if len(args) > 3 else "user"
-        create_user(target, pwd, role=user_role)
+        user_proxy = args[4] if len(args) > 4 else None
+        create_user(target, pwd, role=user_role, assigned_proxy=user_proxy)
         print(f"User '{target}' created with role '{user_role}'.")
+    elif cmd == "set-proxy":
+        if len(args) < 3:
+            print("Error: Missing arguments. Usage: python3 -m app.auth_manager set-proxy <username> <proxy_url>")
+            sys.exit(1)
+        target = args[1]
+        proxy_val = args[2]
+        set_user_proxy(target, proxy_val)
+        print(f"Assigned stealth proxy updated for user '{target}'.")
+    elif cmd == "get-proxy":
+        if len(args) < 2:
+            print("Error: Missing argument. Usage: python3 -m app.auth_manager get-proxy <username>")
+            sys.exit(1)
+        target = args[1]
+        p = get_user_assigned_proxy(target)
+        if p:
+            print(f"User '{target}' assigned proxy: {p}")
+        else:
+            print(f"User '{target}' has no assigned proxy (Direct).")
+    elif cmd == "clear-proxy":
+        if len(args) < 2:
+            print("Error: Missing argument. Usage: python3 -m app.auth_manager clear-proxy <username>")
+            sys.exit(1)
+        target = args[1]
+        set_user_proxy(target, "")
+        print(f"Assigned stealth proxy removed for user '{target}'.")
     elif cmd == "delete":
         if len(args) < 2:
             print("Error: Missing argument. Usage: python3 -m app.auth_manager delete <username> [--reassign <target>]")

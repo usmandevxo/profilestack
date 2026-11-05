@@ -23,6 +23,7 @@ import app.folder_manager as fm
 import app.auth_manager as auth
 from app.mcp_auth import valid_mcp_key, resolve_mcp_principal, http_principal
 from app.api_key_routes import router as api_key_router, require_admin, require_auth
+from app.validator import validate_proxy_url
 
 # Ensure default administrator user is initialized
 auth.init_default_user()
@@ -186,6 +187,7 @@ class CreateUserRequest(BaseModel):
     mcp_profile: Optional[str] = "standard"
     mcp_access: Optional[dict] = None
     notes: Optional[str] = ""
+    assigned_proxy: Optional[str] = None
 
 
 class UpdateUserRequest(BaseModel):
@@ -194,6 +196,11 @@ class UpdateUserRequest(BaseModel):
     mcp_profile: Optional[str] = None
     mcp_access: Optional[dict] = None
     notes: Optional[str] = None
+    assigned_proxy: Optional[str] = None
+
+
+class SetUserProxyRequest(BaseModel):
+    proxy: Optional[str] = ""
 
 
 class ResetPasswordRequest(BaseModel):
@@ -494,7 +501,7 @@ async def get_users_list(request: Request):
     user = getattr(request.state, "user", None)
     if not user or user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Administrator access required.")
-    users = auth.list_users()
+    users = auth.list_users(is_admin=True)
     all_profiles = pm.list_profiles()
     all_folders = fm.load_folders()
     from app import api_key_store as store
@@ -522,6 +529,7 @@ async def create_user_endpoint(req: CreateUserRequest, request: Request):
             mcp_profile=req.mcp_profile or "standard",
             mcp_access=req.mcp_access,
             notes=req.notes or "",
+            assigned_proxy=req.assigned_proxy,
         )
         fm.get_user_default_folder(created["username"])
         return {"status": "success", "user": created}
@@ -552,12 +560,14 @@ async def get_user_detail(username: str, request: Request):
     is_self = str(user.get("username") or "").lower() == username.lower()
     if not (is_admin or is_self):
         raise HTTPException(status_code=403, detail="Access denied.")
-    u = auth.get_user(username)
+    u = auth.get_user(username, is_admin=is_admin)
     if not u:
         raise HTTPException(status_code=404, detail="User not found.")
     res = dict(u)
     res.pop("password_hash", None)
     res.pop("salt", None)
+    if not is_admin:
+        res.pop("assigned_proxy", None)
     return res
 
 
@@ -574,10 +584,61 @@ async def update_user_endpoint(username: str, req: UpdateUserRequest, request: R
             mcp_profile=req.mcp_profile,
             mcp_access=req.mcp_access,
             notes=req.notes,
+            assigned_proxy=req.assigned_proxy,
         )
         return {"status": "success", "user": updated}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/users/{username}/proxy")
+@app.put("/api/users/{username}/proxy")
+async def set_user_proxy_endpoint(username: str, req: SetUserProxyRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required.")
+    proxy_val = (req.proxy or "").strip()
+    if proxy_val:
+        try:
+            from app.proxy_manager import resolve_proxy_url
+            resolved = resolve_proxy_url(proxy_val)
+            if not resolved:
+                raise ValueError("Could not resolve proxy.")
+            if resolved == proxy_val:
+                validate_proxy_url(proxy_val)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid proxy format: {e}")
+    try:
+        updated = auth.set_user_proxy(username, proxy_val)
+        return {
+            "status": "success",
+            "username": username,
+            "assigned_proxy": proxy_val,
+            "user": updated,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/users/{username}/proxy")
+async def clear_user_proxy_endpoint(username: str, request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required.")
+    try:
+        updated = auth.set_user_proxy(username, "")
+        return {
+            "status": "success",
+            "username": username,
+            "assigned_proxy": "",
+            "user": updated,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

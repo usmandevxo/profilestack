@@ -1,10 +1,13 @@
 import json
+import logging
 import os
 import shutil
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
 import psutil
+
+logger = logging.getLogger(__name__)
 
 from app.config import PROFILES_DIR, REGISTRY_FILE
 from app.docker_engine import DockerEngine
@@ -300,6 +303,30 @@ def update_profile(
     return entry
 
 
+def resolve_effective_profile_proxy(entry: dict, owner: Optional[str] = None) -> str:
+    """
+    Resolves the effective proxy to use when launching a profile container.
+    1. If the user explicitly configured their own proxy on this profile, use it.
+    2. Otherwise, check if the admin has configured an assigned stealth proxy for this user.
+       If found, use the admin stealth proxy to prevent leaking the server IP.
+    3. Return empty string if neither is set.
+    """
+    custom_proxy = (entry.get("proxy") or "").strip()
+    if custom_proxy:
+        return custom_proxy
+
+    prof_owner = (owner or entry.get("owner") or "admin").strip()
+    try:
+        from app import auth_manager as auth
+        assigned = auth.get_user_assigned_proxy(prof_owner)
+        if assigned:
+            return assigned
+    except Exception as e:
+        logger.warning(f"Could not load assigned proxy for owner '{prof_owner}': {e}")
+
+    return ""
+
+
 def move_profile_to_folder(name: str, target_folder: str, owner: Optional[str] = None) -> dict:
     name = validate_profile_name(name)
     target_folder = (target_folder or fm.DEFAULT_FOLDER_ID).strip().lower()
@@ -343,10 +370,11 @@ def move_profile_to_folder(name: str, target_folder: str, owner: Optional[str] =
     _save_registry(reg)
 
     if was_running:
+        effective_proxy = resolve_effective_profile_proxy(entry, owner=prof_owner)
         _docker.start_profile(
             profile_name=name,
             profile_dir=entry["path"],
-            proxy_val=entry.get("proxy", ""),
+            proxy_val=effective_proxy,
             start_url=entry.get("start_url", ""),
             host_mount=entry.get("host_mount", ""),
         )
@@ -424,10 +452,12 @@ def start_profile(name: str, owner: Optional[str] = None) -> dict:
     if owner and prof_owner.lower() != owner.strip().lower():
         raise PermissionError(f"Access denied: profile '{name}' belongs to another user.")
 
+    effective_proxy = resolve_effective_profile_proxy(entry, owner=prof_owner)
+
     return _docker.start_profile(
         profile_name=name,
         profile_dir=entry.get("path", str(PROFILES_DIR / name)),
-        proxy_val=entry.get("proxy", ""),
+        proxy_val=effective_proxy,
         start_url=entry.get("start_url", ""),
         host_mount=entry.get("host_mount", ""),
     )
