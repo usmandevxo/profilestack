@@ -1328,6 +1328,23 @@ function toggleAddUserForm(show) {
   }
 }
 
+let userPresetsData = null;
+let cachedUsersList = [];
+
+async function fetchUserPresets() {
+  if (userPresetsData) return userPresetsData;
+  try {
+    const res = await fetch('/api/users-presets');
+    if (res.ok) {
+      userPresetsData = await res.json();
+      return userPresetsData;
+    }
+  } catch (e) {
+    console.error('Failed to load user presets', e);
+  }
+  return null;
+}
+
 async function fetchUsersList() {
   const tbody = document.getElementById('users-table-body');
   if (!tbody) return;
@@ -1338,6 +1355,7 @@ async function fetchUsersList() {
       throw new Error('Failed to load users');
     }
     const users = await res.json();
+    cachedUsersList = users;
     renderUsersTable(users);
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="6" style="padding:14px; text-align:center; color:var(--text-danger);">${esc(err.message)}</td></tr>`;
@@ -1375,6 +1393,7 @@ function renderUsersTable(users) {
         <td style="padding:10px 12px;">${proxyBadge}</td>
         <td style="padding:10px 12px; text-align:right;">
           <div style="display:flex; justify-content:flex-end; gap:6px;">
+            <button class="btn btn-secondary btn-sm" style="padding:3px 7px; font-size:11px;" onclick="openUserPermissionsModal('${esc(u.username)}')">Permissions</button>
             <button class="btn btn-secondary btn-sm" style="padding:3px 7px; font-size:11px;" onclick="promptSetUserProxy('${esc(u.username)}', '${esc(u.assigned_proxy || '')}')">Proxy</button>
             <button class="btn btn-secondary btn-sm" style="padding:3px 7px; font-size:11px;" onclick="promptResetPassword('${esc(u.username)}')">Reset Pwd</button>
             <button class="btn btn-secondary btn-sm" style="padding:3px 7px; font-size:11px;" onclick="toggleUserStatus('${esc(u.username)}', '${u.status}')">${u.status === 'active' ? 'Disable' : 'Enable'}</button>
@@ -1458,6 +1477,140 @@ document.getElementById('user-set-proxy-form')?.addEventListener('submit', async
     if (!res.ok) throw new Error(data.detail || 'Failed to save proxy');
     showToast(`Stealth proxy updated for ${username}`, 'success');
     closeModal('modal-user-set-proxy');
+    await fetchUsersList();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+async function openUserPermissionsModal(username) {
+  const user = cachedUsersList.find(u => u.username.toLowerCase() === username.toLowerCase());
+  if (!user) return;
+
+  const presetsInfo = await fetchUserPresets();
+  const presets = presetsInfo ? presetsInfo.presets : {
+    standard: ['profiles.read', 'profiles.create', 'profiles.update', 'profiles.delete', 'lifecycle.start', 'lifecycle.stop', 'lifecycle.restart', 'browser.read', 'browser.control', 'folders.read', 'folders.manage'],
+    full: ['profiles.read', 'profiles.create', 'profiles.update', 'profiles.delete', 'lifecycle.start', 'lifecycle.stop', 'lifecycle.restart', 'browser.read', 'browser.control', 'folders.read', 'folders.manage', 'proxies.read'],
+    readonly: ['profiles.read', 'browser.read', 'folders.read']
+  };
+
+  const catalog = (presetsInfo && presetsInfo.permissions_catalog) ? presetsInfo.permissions_catalog : [
+    { id: 'profiles.read', label: 'View profiles', group: 'Profiles' },
+    { id: 'profiles.create', label: 'Create new profiles', group: 'Profiles' },
+    { id: 'profiles.update', label: 'Edit profile settings', group: 'Profiles' },
+    { id: 'profiles.delete', label: 'Delete profiles', group: 'Profiles' },
+    { id: 'lifecycle.start', label: 'Start browser container', group: 'Lifecycle' },
+    { id: 'lifecycle.stop', label: 'Stop browser container', group: 'Lifecycle' },
+    { id: 'lifecycle.restart', label: 'Restart browser container', group: 'Lifecycle' },
+    { id: 'browser.read', label: 'Inspect pages & tabs', group: 'Browser' },
+    { id: 'browser.control', label: 'Drive browser & evaluate JS', group: 'Browser' },
+    { id: 'folders.read', label: 'View folders & categories', group: 'Folders' },
+    { id: 'folders.manage', label: 'Create & delete folders', group: 'Folders' },
+    { id: 'proxies.read', label: 'View proxy store', group: 'Proxies' },
+    { id: 'proxies.manage', label: 'Manage cluster proxies', group: 'Proxies' },
+    { id: 'system.read', label: 'Host system telemetry', group: 'System' }
+  ];
+
+  document.getElementById('user-perm-username').value = user.username;
+  document.getElementById('user-perm-user-label').textContent = user.username;
+  document.getElementById('user-perm-role').value = user.role || 'user';
+  
+  const currentAccess = user.mcp_access || {};
+  const currentPreset = user.mcp_profile || currentAccess.profile_preset || 'standard';
+  document.getElementById('user-perm-preset').value = currentPreset;
+  document.getElementById('user-perm-max-profiles').value = currentAccess.max_profiles != null ? currentAccess.max_profiles : (user.max_profiles || 0);
+
+  const allowedPerms = new Set(currentAccess.allowed_permissions || presets[currentPreset] || []);
+
+  const grid = document.getElementById('user-perm-grid');
+  if (grid) {
+    grid.innerHTML = '';
+    catalog.forEach(item => {
+      const label = document.createElement('label');
+      label.style.display = 'flex';
+      label.style.alignItems = 'flex-start';
+      label.style.gap = '8px';
+      label.style.fontSize = '12px';
+      label.style.cursor = 'pointer';
+      label.style.background = '#ffffff';
+      label.style.border = '1px solid var(--border)';
+      label.style.borderRadius = '5px';
+      label.style.padding = '6px 8px';
+
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.value = item.id;
+      chk.className = 'user-perm-checkbox';
+      chk.checked = allowedPerms.has(item.id);
+      chk.style.marginTop = '2px';
+      chk.addEventListener('change', () => {
+        const presetEl = document.getElementById('user-perm-preset');
+        if (presetEl) presetEl.value = 'custom';
+      });
+
+      const info = document.createElement('div');
+      info.innerHTML = `<span style="font-weight:600; color:var(--text-main); display:block;">${esc(item.label)}</span><code style="font-size:10px; color:var(--text-dim);">${esc(item.id)}</code>`;
+
+      label.appendChild(chk);
+      label.appendChild(info);
+      grid.appendChild(label);
+    });
+  }
+
+  openModal('modal-user-permissions');
+}
+
+function handleUserPresetChange() {
+  const preset = document.getElementById('user-perm-preset').value;
+  if (preset === 'custom') return;
+  applyPresetToPerms(preset);
+}
+
+function applyPresetToPerms(preset) {
+  const presets = userPresetsData ? userPresetsData.presets : {
+    standard: ['profiles.read', 'profiles.create', 'profiles.update', 'profiles.delete', 'lifecycle.start', 'lifecycle.stop', 'lifecycle.restart', 'browser.read', 'browser.control', 'folders.read', 'folders.manage'],
+    full: ['profiles.read', 'profiles.create', 'profiles.update', 'profiles.delete', 'lifecycle.start', 'lifecycle.stop', 'lifecycle.restart', 'browser.read', 'browser.control', 'folders.read', 'folders.manage', 'proxies.read'],
+    readonly: ['profiles.read', 'browser.read', 'folders.read']
+  };
+
+  const targetSet = new Set(presets[preset] || []);
+  document.querySelectorAll('.user-perm-checkbox').forEach(chk => {
+    chk.checked = targetSet.has(chk.value);
+  });
+  const presetEl = document.getElementById('user-perm-preset');
+  if (presetEl) presetEl.value = preset;
+}
+
+document.getElementById('user-permissions-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = document.getElementById('user-perm-username').value;
+  const role = document.getElementById('user-perm-role').value;
+  const mcp_profile = document.getElementById('user-perm-preset').value;
+  const max_profiles = parseInt(document.getElementById('user-perm-max-profiles').value, 10) || 0;
+
+  const checkedPerms = Array.from(document.querySelectorAll('.user-perm-checkbox:checked')).map(c => c.value);
+
+  const payload = {
+    role,
+    mcp_profile,
+    max_profiles,
+    mcp_access: {
+      profile_preset: mcp_profile,
+      allowed_permissions: checkedPerms,
+      max_profiles
+    }
+  };
+
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to update user permissions');
+    showToast(`Permissions updated for ${username}`, 'success');
+    closeModal('modal-user-permissions');
     await fetchUsersList();
   } catch (err) {
     showToast(err.message, 'error');

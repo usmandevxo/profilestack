@@ -186,6 +186,7 @@ class CreateUserRequest(BaseModel):
     status: Optional[str] = "active"
     mcp_profile: Optional[str] = "standard"
     mcp_access: Optional[dict] = None
+    max_profiles: Optional[int] = None
     notes: Optional[str] = ""
     assigned_proxy: Optional[str] = None
 
@@ -195,6 +196,7 @@ class UpdateUserRequest(BaseModel):
     status: Optional[str] = None
     mcp_profile: Optional[str] = None
     mcp_access: Optional[dict] = None
+    max_profiles: Optional[int] = None
     notes: Optional[str] = None
     assigned_proxy: Optional[str] = None
 
@@ -528,6 +530,7 @@ async def create_user_endpoint(req: CreateUserRequest, request: Request):
             status=req.status or "active",
             mcp_profile=req.mcp_profile or "standard",
             mcp_access=req.mcp_access,
+            max_profiles=req.max_profiles,
             notes=req.notes or "",
             assigned_proxy=req.assigned_proxy,
         )
@@ -544,10 +547,11 @@ async def get_users_presets_endpoint(request: Request):
     user = getattr(request.state, "user", None)
     if not user or user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Administrator access required.")
-    from app.key_policy import ALL_PERMISSIONS
+    from app.key_policy import ALL_PERMISSIONS, PERMISSIONS
     return {
         "presets": auth.DEFAULT_MCP_PRESETS,
         "all_permissions": ALL_PERMISSIONS,
+        "permissions_catalog": [{"id": k, "label": v[0], "group": v[1]} for k, v in PERMISSIONS.items()],
     }
 
 
@@ -583,6 +587,7 @@ async def update_user_endpoint(username: str, req: UpdateUserRequest, request: R
             status=req.status,
             mcp_profile=req.mcp_profile,
             mcp_access=req.mcp_access,
+            max_profiles=req.max_profiles,
             notes=req.notes,
             assigned_proxy=req.assigned_proxy,
         )

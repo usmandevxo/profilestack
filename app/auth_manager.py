@@ -225,6 +225,7 @@ def create_user(
     status: str = "active",
     mcp_profile: Optional[str] = "standard",
     mcp_access: Optional[dict] = None,
+    max_profiles: Optional[int] = None,
     notes: str = "",
     assigned_proxy: Optional[str] = None
 ) -> dict:
@@ -251,6 +252,8 @@ def create_user(
     access_dict = dict(mcp_access or {})
     if mcp_profile:
         access_dict.setdefault("profile_preset", mcp_profile)
+    if max_profiles is not None:
+        access_dict["max_profiles"] = max(0, int(max_profiles))
     normalized_mcp = _normalize_mcp_access(role, access_dict)
     preset_name = normalized_mcp.get("profile_preset", mcp_profile or "standard")
 
@@ -294,6 +297,7 @@ def update_user(
     status: Optional[str] = None,
     mcp_profile: Optional[str] = None,
     mcp_access: Optional[dict] = None,
+    max_profiles: Optional[int] = None,
     password: Optional[str] = None,
     notes: Optional[str] = None,
     assigned_proxy: Optional[str] = None
@@ -338,10 +342,26 @@ def update_user(
     if notes is not None:
         target_user["notes"] = notes
 
-    if mcp_profile or mcp_access is not None:
-        access_dict = dict(mcp_access or target_user.get("mcp_access", {}))
-        if mcp_profile:
-            access_dict["profile_preset"] = mcp_profile
+    if mcp_profile or mcp_access is not None or max_profiles is not None:
+        current_access = dict(target_user.get("mcp_access", {}))
+        old_preset = target_user.get("mcp_profile") or current_access.get("profile_preset")
+        
+        if mcp_access is not None:
+            access_dict = dict(mcp_access)
+            if mcp_profile:
+                access_dict["profile_preset"] = mcp_profile
+            if mcp_profile and mcp_profile != old_preset and "allowed_permissions" not in mcp_access:
+                access_dict["allowed_permissions"] = list(DEFAULT_MCP_PRESETS.get(mcp_profile, DEFAULT_MCP_PRESETS.get("standard", [])))
+        else:
+            access_dict = dict(current_access)
+            if mcp_profile:
+                access_dict["profile_preset"] = mcp_profile
+                if mcp_profile != old_preset:
+                    access_dict["allowed_permissions"] = list(DEFAULT_MCP_PRESETS.get(mcp_profile, DEFAULT_MCP_PRESETS.get("standard", [])))
+
+        if max_profiles is not None:
+            access_dict["max_profiles"] = max(0, int(max_profiles))
+
         target_user["mcp_access"] = _normalize_mcp_access(target_user.get("role", "user"), access_dict)
         target_user["mcp_profile"] = target_user["mcp_access"].get("profile_preset", mcp_profile or "standard")
 

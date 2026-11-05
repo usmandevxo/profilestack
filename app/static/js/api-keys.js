@@ -358,7 +358,7 @@
   });
   $('ak-create').addEventListener('click', () => {
     if (!state.loaded) return;
-    showError('ak-create-error'); buildEditor('ak-create-access', { permissions: readOnly, profile_access: 'selected', profiles: [] }); openDialog('ak-create-dialog');
+    showError('ak-create-error'); buildEditor('ak-create-access', { permissions: readOnly, profile_access: 'all', profiles: [] }); openDialog('ak-create-dialog');
   });
   $('ak-refresh').addEventListener('click', loadKeys); $('ak-retry').addEventListener('click', loadKeys);
   $('ak-revoke-legacy').addEventListener('click', () => { if (state.legacy?.status === 'active') openRevoke(state.legacy); });

@@ -267,3 +267,59 @@ class MultiTenantUserManagementTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(key_policy.visible_profile({"name": "alice-p1", "owner": "alice"}))
             self.assertFalse(key_policy.visible_profile({"name": "bob-p1", "owner": "bob"}))
             key_policy.current_principal.set(None)
+
+            # Test permission setup validation for standard users:
+            # 1. Alice can create key with her allowed preset permissions
+            res = await client.post(
+                "/api/api-keys",
+                json={
+                    "name": "Alice Automation",
+                    "permissions": ["profiles.read", "profiles.create", "lifecycle.start", "folders.read", "folders.manage"],
+                    "profile_access": "all"
+                },
+                headers=headers_alice
+            )
+            self.assertEqual(res.status_code, 201)
+            ak_id = res.json()["key"]["id"]
+            self.assertIn("folders.manage", res.json()["key"]["permissions"])
+
+            # 2. Alice tries to grant unauthorized cluster permission (system.read) -> 403 Forbidden
+            res = await client.post(
+                "/api/api-keys",
+                json={
+                    "name": "Alice Exploit",
+                    "permissions": ["profiles.read", "system.read"],
+                    "profile_access": "all"
+                },
+                headers=headers_alice
+            )
+            self.assertEqual(res.status_code, 403)
+            self.assertIn("system.read", res.json()["detail"])
+
+            # 3. Alice can update permissions on her own key within allowed boundaries
+            res = await client.patch(
+                f"/api/api-keys/{ak_id}/permissions",
+                json={"permissions": ["profiles.read", "lifecycle.start", "lifecycle.stop"]},
+                headers=headers_alice
+            )
+            self.assertEqual(res.status_code, 200)
+
+            # 4. Alice tries to patch unauthorized permission -> 403 Forbidden
+            res = await client.patch(
+                f"/api/api-keys/{ak_id}/permissions",
+                json={"permissions": ["profiles.read", "proxies.manage"]},
+                headers=headers_alice
+            )
+            self.assertEqual(res.status_code, 403)
+
+            # 5. Bob (readonly preset) tries to create key with write permissions -> 403 Forbidden
+            res = await client.post(
+                "/api/api-keys",
+                json={
+                    "name": "Bob Illegal Write",
+                    "permissions": ["profiles.create"],
+                    "profile_access": "all"
+                },
+                headers=headers_bob
+            )
+            self.assertEqual(res.status_code, 403)

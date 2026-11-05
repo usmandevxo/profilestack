@@ -79,7 +79,7 @@ def authorize(tool, arguments):
     # Multi-tenant tenant boundary checks for non-admin accounts
     if principal.get('role') != 'admin' and 'owner' in principal:
         owner = principal.get('owner', 'admin').lower()
-        if permission in GLOBAL_PERMISSIONS:
+        if permission in ('proxies.manage', 'system.read'):
             raise PermissionError(DENIED)
         if name:
             from app import profile_manager as pm
