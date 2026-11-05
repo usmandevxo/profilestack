@@ -81,7 +81,7 @@ def authorize(tool, arguments):
         owner = principal.get('owner', 'admin').lower()
         if permission in ('proxies.manage', 'system.read'):
             raise PermissionError(DENIED)
-        if name:
+        if name and tool != 'create_profile':
             from app import profile_manager as pm
             prof = pm.get_profile(name)
             if not prof or prof.get('owner', 'admin').lower() != owner:
@@ -89,10 +89,13 @@ def authorize(tool, arguments):
         if tool == 'create_profile':
             from app import folder_manager as fm
             from app import profile_manager as pm
-            target_folder = (arguments.get('folder') or 'default').strip().lower()
-            f_obj = fm.get_folder(target_folder)
-            if f_obj and f_obj.get('owner', 'admin').lower() != owner:
-                raise PermissionError(DENIED)
+            if name and pm.get_profile(name):
+                raise ValueError(f"Profile '{name}' already exists.")
+            target_folder = (arguments.get('folder') or '').strip().lower()
+            if target_folder and target_folder != 'default':
+                f_obj = fm.get_folder(target_folder)
+                if f_obj and f_obj.get('owner', 'admin').lower() != owner:
+                    raise PermissionError(DENIED)
             max_p = principal.get('max_profiles', 0)
             if max_p > 0:
                 current_p = pm.list_profiles(owner=owner)

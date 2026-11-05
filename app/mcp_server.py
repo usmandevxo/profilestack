@@ -208,6 +208,13 @@ def create_profile(
             if not folder or folder == 'default':
                 if 'default' not in allowed_folders and allowed_folders:
                     folder = allowed_folders[0]
+        if principal and principal.get('role') != 'admin':
+            if not folder or folder == 'default':
+                f_obj = fm.get_folder('default')
+                if not f_obj or f_obj.get('owner', 'admin').lower() != owner.lower():
+                    user_folders = fm.load_folders(owner=owner)
+                    if user_folders:
+                        folder = user_folders[0]['id']
         if principal and 'folders.manage' not in principal['permissions'] and not fm.get_folder((folder or 'default').strip().lower()):
             raise ValueError(policy.DENIED)
         res = pm.create_profile(

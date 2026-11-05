@@ -307,6 +307,29 @@ class TransportPolicyTests(unittest.IsolatedAsyncioTestCase):
         finally:
             http_principal.reset(token)
 
+    def test_tenant_can_create_folder_and_profile_in_folder(self):
+        import json
+        from app.key_policy import current_principal, authorize
+        from app import mcp_server as srv
+        k = store.create_key('TenantKey', 30, permissions=['folders.manage', 'folders.read', 'profiles.create', 'profiles.read'], owner='tenant_bob')
+        p = store.get_principal(k['secret'])
+        token = current_principal.set(p)
+        try:
+            authorize('create_folder', {'name': 'Project X'})
+            folder_res = json.loads(srv.create_folder(name='Project X', description='Desc'))
+            self.assertEqual(folder_res.get('status'), 'success')
+            f_id = folder_res['folder']['id']
+            self.assertEqual(folder_res['folder']['owner'], 'tenant_bob')
+
+            authorize('create_profile', {'profile_name': 'bob_browser', 'folder': f_id})
+            prof_res = json.loads(srv.create_profile(profile_name='bob_browser', folder=f_id))
+            self.assertEqual(prof_res.get('status'), 'success')
+            self.assertEqual(prof_res['profile']['owner'], 'tenant_bob')
+            self.assertEqual(prof_res['profile']['folder'], f_id)
+        finally:
+            current_principal.reset(token)
+            store.revoke_key(k['key']['id'])
+
 
 if __name__ == '__main__':
     unittest.main()
