@@ -35,7 +35,7 @@
       </nav>
       <div class="sidebar-footer">
         <span class="ak-user">{{ user.username if user and user.username else 'Administrator' }}</span>
-        <span class="ak-muted">Cluster administration</span>
+        <span class="ak-muted">{{ 'Tenant Workspace' if user and user.role != 'admin' else 'Cluster administration' }}</span>
       </div>
     </aside>
     <main class="main-content" id="main-content">

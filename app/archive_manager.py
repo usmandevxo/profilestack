@@ -90,7 +90,7 @@ def export_profile_zip(profile_name: str) -> Path:
     return out_zip
 
 
-def import_profile_zip(archive_path: Path) -> dict:
+def import_profile_zip(archive_path: Path, owner: str = "admin") -> dict:
     if not archive_path.is_file():
         raise FileNotFoundError(f"Archive file not found: {archive_path}")
 
@@ -159,6 +159,7 @@ def import_profile_zip(archive_path: Path) -> dict:
             "start_url": "https://www.google.com",
             "host_mount": "",
             "note": "Imported from archive",
+            "owner": owner,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
         }
         _save_registry(reg)

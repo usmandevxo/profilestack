@@ -15,6 +15,7 @@ DEFAULT_FOLDER = {
     "description": "Default workspace for general profiles",
     "color": "#64748b",
     "created_at": "2026-10-03 00:00:00",
+    "owner": "admin",
 }
 
 PRESET_COLORS = [
@@ -39,7 +40,17 @@ def _ensure_physical_dir(folder_id: str) -> Path:
     return f_dir
 
 
-def load_folders() -> List[dict]:
+def get_user_default_folder(owner: str) -> dict:
+    folders = load_folders(owner=owner)
+    for f in folders:
+        if f.get("id") == "default" or f.get("name") == "General":
+            return f
+    if folders:
+        return folders[0]
+    return create_folder(name="General", folder_id="default", owner=owner)
+
+
+def load_folders(owner: Optional[str] = None) -> List[dict]:
     folders = []
     if FOLDERS_FILE.exists():
         try:
@@ -50,10 +61,20 @@ def load_folders() -> List[dict]:
         except (json.JSONDecodeError, OSError):
             folders = []
 
-    # Ensure default folder is present
+    modified = False
+    # Ensure all existing folders have an owner (legacy defaults to admin)
+    for f in folders:
+        if "owner" not in f:
+            f["owner"] = "admin"
+            modified = True
+
+    # Ensure system default folder is present
     has_default = any(f.get("id") == DEFAULT_FOLDER_ID for f in folders)
     if not has_default:
         folders.insert(0, dict(DEFAULT_FOLDER))
+        modified = True
+
+    if modified:
         save_folders(folders)
 
     # Ensure physical folder directories exist on disk
@@ -61,6 +82,26 @@ def load_folders() -> List[dict]:
         fid = f.get("id")
         if fid:
             _ensure_physical_dir(fid)
+
+    if owner:
+        owner_lower = owner.strip().lower()
+        user_folders = [f for f in folders if f.get("owner", "admin").lower() == owner_lower]
+        if not user_folders:
+            # Auto-create user default category
+            default_fid = "default" if owner_lower == "admin" else f"general-{owner_lower}"
+            new_f = {
+                "id": default_fid,
+                "name": "General",
+                "description": f"Default workspace for {owner}",
+                "color": "#64748b",
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                "owner": owner,
+            }
+            folders.append(new_f)
+            save_folders(folders)
+            _ensure_physical_dir(default_fid)
+            return [new_f]
+        return user_folders
 
     return folders
 
@@ -72,16 +113,18 @@ def save_folders(folders: List[dict]) -> None:
     os.replace(tmp, FOLDERS_FILE)
 
 
-def get_folder(folder_id: str) -> Optional[dict]:
+def get_folder(folder_id: str, owner: Optional[str] = None) -> Optional[dict]:
     folder_id = (folder_id or "").strip().lower()
     folders = load_folders()
     for f in folders:
         if f.get("id") == folder_id:
+            if owner and f.get("owner", "admin").lower() != owner.strip().lower():
+                return None
             return dict(f)
     return None
 
 
-def generate_folder_id(name: str, existing_ids: List[str]) -> str:
+def generate_folder_id(name: str, existing_ids: List[str], owner: Optional[str] = None) -> str:
     base = re.sub(r"[^a-zA-Z0-9_-]", "-", name.lower()).strip("-")
     base = re.sub(r"-+", "-", base)
     if not base:
@@ -101,6 +144,7 @@ def create_folder(
     description: str = "",
     color: str = "#2563eb",
     folder_id: Optional[str] = None,
+    owner: str = "admin",
 ) -> dict:
     name = validate_folder_name(name)
     folders = load_folders()
@@ -111,7 +155,7 @@ def create_folder(
         if fid in existing_ids:
             raise ValueError(f"Folder with ID '{fid}' already exists.")
     else:
-        fid = generate_folder_id(name, existing_ids)
+        fid = generate_folder_id(name, existing_ids, owner=owner)
 
     color = (color or "#2563eb").strip()
     if not re.match(r"^#(?:[0-9a-fA-F]{3}){1,2}$", color):
@@ -123,6 +167,7 @@ def create_folder(
         "description": (description or "").strip(),
         "color": color,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "owner": owner or "admin",
     }
 
     folders.append(new_folder)
@@ -136,6 +181,7 @@ def update_folder(
     name: Optional[str] = None,
     description: Optional[str] = None,
     color: Optional[str] = None,
+    owner: Optional[str] = None,
 ) -> dict:
     folder_id = validate_folder_id(folder_id)
     folders = load_folders()
@@ -147,6 +193,9 @@ def update_folder(
 
     if not target:
         raise ValueError(f"Folder '{folder_id}' not found.")
+
+    if owner and target.get("owner", "admin").lower() != owner.strip().lower():
+        raise PermissionError(f"Access denied: folder '{folder_id}' belongs to another user.")
 
     if name is not None:
         target["name"] = validate_folder_name(name)
@@ -161,18 +210,43 @@ def update_folder(
     return target
 
 
-def delete_folder(folder_id: str, move_to: str = DEFAULT_FOLDER_ID) -> dict:
+def delete_folder(
+    folder_id: str,
+    move_to: Optional[str] = None,
+    owner: Optional[str] = None,
+) -> dict:
     folder_id = validate_folder_id(folder_id)
     if folder_id == DEFAULT_FOLDER_ID:
-        raise ValueError("Cannot delete the default General folder.")
+        raise ValueError("Cannot delete the system default General folder.")
 
     folders = load_folders()
-    existing_ids = [f.get("id") for f in folders]
-    if folder_id not in existing_ids:
+    target = None
+    for f in folders:
+        if f.get("id") == folder_id:
+            target = f
+            break
+
+    if not target:
         raise ValueError(f"Folder '{folder_id}' does not exist.")
 
-    if move_to not in existing_ids:
-        move_to = DEFAULT_FOLDER_ID
+    folder_owner = target.get("owner", "admin")
+    if owner and folder_owner.lower() != owner.strip().lower():
+        raise PermissionError(f"Access denied: folder '{folder_id}' belongs to another user.")
+
+    # Determine default destination for orphaned profiles
+    user_folders = [f for f in folders if f.get("owner", "admin").lower() == folder_owner.lower() and f.get("id") != folder_id]
+    if not user_folders:
+        raise ValueError("Cannot delete user's only remaining category.")
+
+    if not move_to:
+        move_to = user_folders[0]["id"]
+    else:
+        # Verify move_to exists and belongs to the same owner (or system default)
+        move_target = next((f for f in folders if f.get("id") == move_to), None)
+        if not move_target:
+            move_to = user_folders[0]["id"]
+        elif owner and move_target.get("owner", "admin").lower() != owner.strip().lower():
+            raise PermissionError(f"Access denied: destination folder '{move_to}' belongs to another user.")
 
     # Reassign profiles in registry
     reassigned_count = 0
@@ -205,9 +279,9 @@ def delete_folder(folder_id: str, move_to: str = DEFAULT_FOLDER_ID) -> dict:
     }
 
 
-def list_folders_with_stats() -> List[dict]:
-    folders = load_folders()
-    
+def list_folders_with_stats(owner: Optional[str] = None) -> List[dict]:
+    folders = load_folders(owner=owner)
+
     # Load profile registry and statuses
     profiles_data = {}
     if REGISTRY_FILE.exists():
@@ -217,9 +291,11 @@ def list_folders_with_stats() -> List[dict]:
         except Exception:
             pass
 
-    # Tally counts
+    # Filter profile counts by owner if specified
     counts = {f["id"]: {"total": 0, "size_mb": 0.0} for f in folders}
     for p_name, p in profiles_data.items():
+        if owner and p.get("owner", "admin").lower() != owner.strip().lower():
+            continue
         fid = p.get("folder", DEFAULT_FOLDER_ID)
         if fid not in counts:
             counts[fid] = {"total": 0, "size_mb": 0.0}

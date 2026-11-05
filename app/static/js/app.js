@@ -1243,6 +1243,170 @@ window.copyCodeSnippet = async function(codeId) {
   }
 };
 
+// User Management (Admin Only)
+document.getElementById('btn-manage-users')?.addEventListener('click', async () => {
+  await fetchUsersList();
+  openModal('modal-users');
+});
+
+function toggleAddUserForm(show) {
+  const form = document.getElementById('user-create-form');
+  if (!form) return;
+  if (show === undefined) {
+    show = form.style.display === 'none';
+  }
+  form.style.display = show ? 'block' : 'none';
+  const btn = document.getElementById('btn-show-add-user');
+  if (btn) {
+    btn.innerHTML = show ? 'Hide Form' : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Add New User';
+  }
+}
+
+async function fetchUsersList() {
+  const tbody = document.getElementById('users-table-body');
+  if (!tbody) return;
+  try {
+    const res = await fetch('/api/users');
+    if (!res.ok) {
+      if (res.status === 403) return; // not admin
+      throw new Error('Failed to load users');
+    }
+    const users = await res.json();
+    renderUsersTable(users);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" style="padding:14px; text-align:center; color:var(--text-danger);">${esc(err.message)}</td></tr>`;
+  }
+}
+
+function renderUsersTable(users) {
+  const tbody = document.getElementById('users-table-body');
+  if (!tbody) return;
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:16px; text-align:center; color:var(--text-muted);">No users found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(u => {
+    const roleBadge = u.role === 'admin'
+      ? '<span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:10px; font-weight:600; font-size:11px;">Admin</span>'
+      : '<span style="background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:10px; font-weight:600; font-size:11px;">User</span>';
+    const statusBadge = u.status === 'active'
+      ? '<span style="background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:10px; font-weight:600; font-size:11px;">Active</span>'
+      : '<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:10px; font-weight:600; font-size:11px;">Disabled</span>';
+    const mcpBadge = `<span style="background:#f1f5f9; color:#475569; padding:2px 8px; border-radius:10px; font-weight:500; font-size:11px;">${esc(u.mcp_profile || 'standard')}</span>`;
+    const quota = u.mcp_access?.max_profiles ? `${u.mcp_access.max_profiles} max` : 'Unlimited';
+
+    return `
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:10px 12px; font-weight:600; color:var(--text-main);">
+          ${esc(u.username)}
+          ${u.notes ? `<div style="font-size:11px; color:var(--text-dim); font-weight:400;">${esc(u.notes)}</div>` : ''}
+        </td>
+        <td style="padding:10px 12px;">${roleBadge}</td>
+        <td style="padding:10px 12px;">${statusBadge}</td>
+        <td style="padding:10px 12px;">${mcpBadge}</td>
+        <td style="padding:10px 12px; color:var(--text-muted);">${quota}</td>
+        <td style="padding:10px 12px; text-align:right;">
+          <div style="display:flex; justify-content:flex-end; gap:6px;">
+            <button class="btn btn-secondary btn-sm" style="padding:3px 7px; font-size:11px;" onclick="promptResetPassword('${esc(u.username)}')">Reset Pwd</button>
+            <button class="btn btn-secondary btn-sm" style="padding:3px 7px; font-size:11px;" onclick="toggleUserStatus('${esc(u.username)}', '${u.status}')">${u.status === 'active' ? 'Disable' : 'Enable'}</button>
+            <button class="btn btn-danger btn-sm" style="padding:3px 7px; font-size:11px;" onclick="deleteUserAccount('${esc(u.username)}')">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+document.getElementById('user-create-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = document.getElementById('new-user-username').value.trim();
+  const password = document.getElementById('new-user-password').value;
+  const role = document.getElementById('new-user-role').value;
+  const mcp_profile = document.getElementById('new-user-mcp-profile').value;
+  const max_profiles = parseInt(document.getElementById('new-user-max-profiles').value, 10) || 0;
+
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username,
+        password,
+        role,
+        mcp_profile,
+        max_profiles
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to create user');
+    showToast(`User ${username} created successfully`, 'success');
+    document.getElementById('user-create-form').reset();
+    toggleAddUserForm(false);
+    await fetchUsersList();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+function promptResetPassword(username) {
+  document.getElementById('reset-pwd-username').value = username;
+  document.getElementById('reset-pwd-user-label').textContent = username;
+  document.getElementById('reset-pwd-new-password').value = '';
+  openModal('modal-user-reset-pwd');
+}
+
+document.getElementById('user-reset-pwd-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = document.getElementById('reset-pwd-username').value;
+  const new_password = document.getElementById('reset-pwd-new-password').value;
+
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(username)}/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to reset password');
+    showToast(`Password updated for ${username}`, 'success');
+    closeModal('modal-user-reset-pwd');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+async function toggleUserStatus(username, currentStatus) {
+  const newStatus = currentStatus === 'active' ? 'disabled' : 'active';
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to update user status');
+    showToast(`User ${username} is now ${newStatus}`, 'success');
+    await fetchUsersList();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function deleteUserAccount(username) {
+  if (!confirm(`Are you sure you want to permanently delete user "${username}"?`)) return;
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to delete user');
+    showToast(`User ${username} deleted`, 'info');
+    await fetchUsersList();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
 // Initial Load & Intervals
 window.addEventListener('DOMContentLoaded', async () => {
   initColorPalettes();

@@ -20,7 +20,7 @@ import app.cdp_client as cdp
 import app.folder_manager as fm
 import app.auth_manager as auth
 from app.mcp_auth import valid_mcp_key, resolve_mcp_principal, http_principal
-from app.api_key_routes import router as api_key_router, require_admin
+from app.api_key_routes import router as api_key_router, require_admin, require_auth
 
 # Ensure default administrator user is initialized
 auth.init_default_user()
@@ -51,8 +51,17 @@ app.include_router(api_key_router)
 
 @app.get("/api-keys", response_class=HTMLResponse)
 async def api_keys_page(request: Request):
-    user = require_admin(request)
+    user = require_auth(request)
     response = templates.TemplateResponse(request=request, name="api_keys.html", context={"user": user})
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@app.get("/users", response_class=HTMLResponse)
+async def users_page(request: Request):
+    user = require_admin(request)
+    response = templates.TemplateResponse(request=request, name="users.html", context={"user": user})
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
@@ -128,6 +137,24 @@ class AuthMiddleware:
 
         session = auth.validate_session(token) if token else None
         if session:
+            uname = str(session.get("username") or "")
+            user_obj = auth.get_user(uname)
+            if user_obj and user_obj.get("status") == "disabled":
+                if token:
+                    auth.destroy_session(token)
+                if path.startswith("/api/"):
+                    response = JSONResponse(status_code=401, content={"detail": "Account is disabled."})
+                    return await response(scope, receive, send)
+                response = RedirectResponse(url="/login", status_code=303)
+                return await response(scope, receive, send)
+            if user_obj:
+                session["role"] = user_obj.get("role", "user")
+                session["mcp_profile"] = user_obj.get("mcp_profile", "standard")
+                session["mcp_access"] = user_obj.get("mcp_access", {})
+            else:
+                session.setdefault("role", "admin" if uname.lower() in ("admin", "usmandevx") else "user")
+                session.setdefault("mcp_profile", "full" if session["role"] == "admin" else "standard")
+                session.setdefault("mcp_access", {})
             scope.setdefault("state", {})["user"] = session
             return await self.app(scope, receive, send)
 
@@ -152,11 +179,34 @@ class LoginRequest(BaseModel):
     remember: Optional[bool] = True
 
 
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: Optional[str] = "user"
+    status: Optional[str] = "active"
+    mcp_profile: Optional[str] = "standard"
+    mcp_access: Optional[dict] = None
+    notes: Optional[str] = ""
+
+
+class UpdateUserRequest(BaseModel):
+    role: Optional[str] = None
+    status: Optional[str] = None
+    mcp_profile: Optional[str] = None
+    mcp_access: Optional[dict] = None
+    notes: Optional[str] = None
+
+
+class ResetPasswordRequest(BaseModel):
+    password: str
+
+
 class CreateFolderRequest(BaseModel):
     name: str
     description: Optional[str] = ""
     color: Optional[str] = "#2563eb"
     id: Optional[str] = None
+    owner: Optional[str] = None
 
 
 class UpdateFolderRequest(BaseModel):
@@ -176,6 +226,7 @@ class CreateProfileRequest(BaseModel):
     start_url: Optional[str] = ""
     host_mount: Optional[str] = ""
     note: Optional[str] = ""
+    owner: Optional[str] = None
 
 
 class UpdateProfileRequest(BaseModel):
@@ -289,8 +340,14 @@ async def auth_me(request: Request):
         user = auth.validate_session(token)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated.")
+    uname = str(user.get("username") or "")
+    user_record = auth.get_user(uname)
     return {
-        "username": user["username"],
+        "username": uname,
+        "role": user_record.get("role", "user") if user_record else "user",
+        "status": user_record.get("status", "active") if user_record else "active",
+        "mcp_profile": user_record.get("mcp_profile", "standard") if user_record else "standard",
+        "mcp_access": user_record.get("mcp_access", {}) if user_record else {},
         "token": token or "",
         "created_at": user.get("created_at"),
     }
@@ -413,15 +470,139 @@ async def index_view(request: Request):
 
 @app.get("/viewer/{name}", response_class=HTMLResponse)
 async def viewer_view(request: Request, name: str, demo: Optional[str] = None):
+    user = getattr(request.state, "user", None)
     if demo == "1" or request.query_params.get("demo") == "1" or name.startswith("chrome-sandbox"):
         dummy_p = next((p for p in DUMMY_PROFILES if p["name"] == name), DUMMY_PROFILES[0])
-        user = getattr(request.state, "user", None)
         return templates.TemplateResponse(request=request, name="vnc.html", context={"profile": dummy_p, "user": user, "is_demo": True})
-    profile = pm.get_profile(name)
+    owner = None if (user and user.get("role") == "admin") else ((user.get("username") or "admin") if user else "admin")
+    profile = pm.get_profile(name, owner=owner)
     if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-    user = getattr(request.state, "user", None)
+        raise HTTPException(status_code=404, detail="Profile not found or access denied")
     return templates.TemplateResponse(request=request, name="vnc.html", context={"profile": profile, "user": user, "is_demo": False})
+
+
+# ── User Management REST APIs (Admin Only) ────────────────────────────────────
+@app.get("/api/users")
+async def get_users_list(request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required.")
+    users = auth.list_users()
+    all_profiles = pm.list_profiles()
+    all_folders = fm.load_folders()
+    from app import api_key_store as store
+    all_keys = store.list_keys()
+
+    for u in users:
+        uname = (u.get("username") or "").lower()
+        u["profile_count"] = sum(1 for p in all_profiles if (p.get("owner") or "admin").lower() == uname)
+        u["folder_count"] = sum(1 for f in all_folders if (f.get("owner") or "admin").lower() == uname)
+        u["key_count"] = sum(1 for k in all_keys if (k.get("owner") or "admin").lower() == uname)
+    return users
+
+
+@app.post("/api/users", status_code=201)
+async def create_user_endpoint(req: CreateUserRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required.")
+    try:
+        created = auth.create_user(
+            username=req.username,
+            password=req.password,
+            role=req.role or "user",
+            status=req.status or "active",
+            mcp_profile=req.mcp_profile or "standard",
+            mcp_access=req.mcp_access,
+            notes=req.notes or "",
+        )
+        fm.get_user_default_folder(created["username"])
+        return {"status": "success", "user": created}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/users-presets")
+async def get_users_presets_endpoint(request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required.")
+    from app.key_policy import ALL_PERMISSIONS
+    return {
+        "presets": auth.DEFAULT_MCP_PRESETS,
+        "all_permissions": ALL_PERMISSIONS,
+    }
+
+
+@app.get("/api/users/{username}")
+async def get_user_detail(username: str, request: Request):
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    is_admin = user.get("role") == "admin"
+    is_self = str(user.get("username") or "").lower() == username.lower()
+    if not (is_admin or is_self):
+        raise HTTPException(status_code=403, detail="Access denied.")
+    u = auth.get_user(username)
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found.")
+    res = dict(u)
+    res.pop("password_hash", None)
+    res.pop("salt", None)
+    return res
+
+
+@app.put("/api/users/{username}")
+async def update_user_endpoint(username: str, req: UpdateUserRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required.")
+    try:
+        updated = auth.update_user(
+            username=username,
+            role=req.role,
+            status=req.status,
+            mcp_profile=req.mcp_profile,
+            mcp_access=req.mcp_access,
+            notes=req.notes,
+        )
+        return {"status": "success", "user": updated}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/users/{username}/reset-password")
+async def reset_user_password_endpoint(username: str, req: ResetPasswordRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required.")
+    try:
+        auth.admin_reset_password(username, req.password)
+        return {"status": "success", "message": f"Password reset for user '{username}'."}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/users/{username}")
+async def delete_user_endpoint(username: str, request: Request):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required.")
+    if str(user.get("username") or "").lower() == username.lower():
+        raise HTTPException(status_code=400, detail="Cannot delete your own administrator account.")
+    try:
+        auth.delete_user(username)
+        return {"status": "success", "deleted": username}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── System Telemetry ──────────────────────────────────────────────────────────
@@ -429,7 +610,15 @@ async def viewer_view(request: Request, name: str, demo: Optional[str] = None):
 async def get_telemetry(request: Request, demo: Optional[str] = None):
     if demo == "1" or request.query_params.get("demo") == "1":
         return DUMMY_TELEMETRY
-    return pm.system_telemetry()
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    telemetry = pm.system_telemetry()
+    if not is_admin and user:
+        uname = user.get("username", "")
+        user_profiles = pm.list_profiles(owner=uname)
+        telemetry["total_profiles"] = len(user_profiles)
+        telemetry["running_profiles"] = sum(1 for p in user_profiles if p.get("status") == "running")
+    return telemetry
 
 
 # ── Folders Management ────────────────────────────────────────────────────────
@@ -437,39 +626,59 @@ async def get_telemetry(request: Request, demo: Optional[str] = None):
 async def get_folders(request: Request, demo: Optional[str] = None):
     if demo == "1" or request.query_params.get("demo") == "1":
         return DUMMY_FOLDERS
-    return fm.list_folders_with_stats()
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = None
+    if is_admin:
+        requested_user = request.query_params.get("user")
+        if requested_user:
+            owner = requested_user.strip()
+    else:
+        owner = user.get("username", "admin") if user else "admin"
+    return fm.list_folders_with_stats(owner=owner)
 
 
 @app.post("/api/folders")
-async def create_folder(req: CreateFolderRequest):
+async def create_folder(req: CreateFolderRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = req.owner.strip() if (is_admin and req.owner) else (user.get("username", "admin") if user else "admin")
     try:
         return fm.create_folder(
             name=req.name,
             description=req.description or "",
             color=req.color or "#2563eb",
             folder_id=req.id,
+            owner=owner,
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.put("/api/folders/{folder_id}")
-async def update_folder(folder_id: str, req: UpdateFolderRequest):
+async def update_folder(folder_id: str, req: UpdateFolderRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = None if is_admin else (user.get("username", "admin") if user else "admin")
     try:
         return fm.update_folder(
             folder_id=folder_id,
             name=req.name,
             description=req.description,
             color=req.color,
+            owner=owner,
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.delete("/api/folders/{folder_id}")
-async def delete_folder(folder_id: str, move_to: Optional[str] = "default"):
+async def delete_folder(folder_id: str, request: Request, move_to: Optional[str] = "default"):
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = None if is_admin else (user.get("username", "admin") if user else "admin")
     try:
-        return fm.delete_folder(folder_id=folder_id, move_to=move_to or "default")
+        return fm.delete_folder(folder_id=folder_id, move_to=move_to or "default", owner=owner)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -481,19 +690,44 @@ async def get_profiles(request: Request, folder: Optional[str] = None, demo: Opt
         if folder and folder != "all":
             return [p for p in DUMMY_PROFILES if p["folder"] == folder]
         return DUMMY_PROFILES
-    return pm.list_profiles(folder_id=folder)
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = None
+    if is_admin:
+        requested_user = request.query_params.get("user")
+        if requested_user:
+            owner = requested_user.strip()
+    else:
+        owner = user.get("username", "admin") if user else "admin"
+    return pm.list_profiles(folder_id=folder, owner=owner)
 
 
 @app.get("/api/profiles/{name}")
-async def get_profile(name: str):
-    profile = pm.get_profile(name)
+async def get_profile(name: str, request: Request):
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = None if is_admin else (user.get("username", "admin") if user else "admin")
+    profile = pm.get_profile(name, owner=owner)
     if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
+        raise HTTPException(status_code=404, detail="Profile not found or access denied")
     return profile
 
 
 @app.post("/api/profiles")
-async def create_profile(req: CreateProfileRequest):
+async def create_profile(req: CreateProfileRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = req.owner.strip() if (is_admin and req.owner) else (user.get("username", "admin") if user else "admin")
+
+    if not is_admin and user:
+        uname = user.get("username", "")
+        user_record = auth.get_user(uname)
+        max_profiles = user_record.get("mcp_access", {}).get("max_profiles", 0) if user_record else 0
+        if max_profiles > 0:
+            existing_count = len(pm.list_profiles(owner=uname))
+            if existing_count >= max_profiles:
+                raise HTTPException(status_code=403, detail=f"Profile quota reached ({max_profiles} maximum profiles allowed).")
+
     try:
         entry = pm.create_profile(
             name=req.name,
@@ -502,6 +736,7 @@ async def create_profile(req: CreateProfileRequest):
             start_url=req.start_url,
             host_mount=req.host_mount,
             note=req.note,
+            owner=owner,
         )
         return {"status": "success", "profile": entry}
     except Exception as e:
@@ -509,7 +744,10 @@ async def create_profile(req: CreateProfileRequest):
 
 
 @app.put("/api/profiles/{name}")
-async def update_profile(name: str, req: UpdateProfileRequest):
+async def update_profile(name: str, req: UpdateProfileRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = None if is_admin else (user.get("username", "admin") if user else "admin")
     try:
         entry = pm.update_profile(
             name=name,
@@ -518,6 +756,7 @@ async def update_profile(name: str, req: UpdateProfileRequest):
             start_url=req.start_url,
             host_mount=req.host_mount,
             note=req.note,
+            owner=owner,
         )
         return {"status": "success", "profile": entry}
     except Exception as e:
@@ -525,50 +764,71 @@ async def update_profile(name: str, req: UpdateProfileRequest):
 
 
 @app.post("/api/profiles/{name}/move-folder")
-async def move_profile_folder(name: str, req: MoveProfileFolderRequest):
+async def move_profile_folder(name: str, req: MoveProfileFolderRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = None if is_admin else (user.get("username", "admin") if user else "admin")
     try:
-        return pm.move_profile_to_folder(name=name, target_folder=req.folder)
+        return pm.move_profile_to_folder(name=name, target_folder=req.folder, owner=owner)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.delete("/api/profiles/{name}")
-async def delete_profile(name: str):
+async def delete_profile(name: str, request: Request):
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = None if is_admin else (user.get("username", "admin") if user else "admin")
     try:
-        return pm.delete_profile(name)
+        return pm.delete_profile(name, owner=owner)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 # ── Profile Lifecycle Actions ─────────────────────────────────────────────────
 @app.post("/api/profiles/{name}/start")
-async def start_profile(name: str):
+async def start_profile(name: str, request: Request):
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = None if is_admin else (user.get("username", "admin") if user else "admin")
     try:
-        res = pm.start_profile(name)
+        res = pm.start_profile(name, owner=owner)
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/profiles/{name}/stop")
-async def stop_profile(name: str):
+async def stop_profile(name: str, request: Request):
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = None if is_admin else (user.get("username", "admin") if user else "admin")
     try:
-        return pm.stop_profile(name)
+        return pm.stop_profile(name, owner=owner)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/profiles/{name}/restart")
-async def restart_profile(name: str):
+async def restart_profile(name: str, request: Request):
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = None if is_admin else (user.get("username", "admin") if user else "admin")
     try:
-        return pm.restart_profile(name)
+        return pm.restart_profile(name, owner=owner)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 # ── Archive Export / Import ───────────────────────────────────────────────────
 @app.get("/api/profiles/{name}/export")
-async def export_profile(name: str):
+async def export_profile(name: str, request: Request):
+    user = getattr(request.state, "user", None)
+    is_admin = user and user.get("role") == "admin"
+    owner = None if is_admin else (user.get("username", "admin") if user else "admin")
+    profile = pm.get_profile(name, owner=owner)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found or access denied")
     try:
         zip_path = am.export_profile_zip(name)
         return FileResponse(
@@ -581,14 +841,16 @@ async def export_profile(name: str):
 
 
 @app.post("/api/profiles/import")
-async def import_profile(file: UploadFile = File(...)):
+async def import_profile(request: Request, file: UploadFile = File(...)):
+    user = getattr(request.state, "user", None)
+    owner = (user.get("username", "admin") if user else "admin")
     try:
         ARCHIVES_DIR.mkdir(parents=True, exist_ok=True)
         dest = ARCHIVES_DIR / file.filename
         with open(dest, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        entry = am.import_profile_zip(dest)
+        entry = am.import_profile_zip(dest, owner=owner)
         dest.unlink(missing_ok=True)
         return {"status": "success", "profile": entry}
     except Exception as e:
@@ -683,9 +945,13 @@ async def test_proxy(req: TestProxyRequest):
 
 # ── Virtual Input & Touch Emulation ───────────────────────────────────────────
 @app.post("/api/profiles/{name}/send-text")
-async def send_text(name: str, req: SendTextRequest):
-    p = pm.get_profile(name)
-    if not p or p.get("status") != "running" or not p.get("cdp_port"):
+async def send_text(name: str, req: SendTextRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    owner = None if (user and user.get("role") == "admin") else (user.get("username", "admin") if user else "admin")
+    p = pm.get_profile(name, owner=owner)
+    if not p:
+        raise HTTPException(status_code=404, detail="Profile not found or access denied.")
+    if p.get("status") != "running" or not p.get("cdp_port"):
         raise HTTPException(status_code=400, detail="Profile is not currently running.")
     try:
         return await cdp.send_text_input(int(p["cdp_port"]), req.text, req.press_enter or False)
@@ -694,9 +960,13 @@ async def send_text(name: str, req: SendTextRequest):
 
 
 @app.post("/api/profiles/{name}/send-key")
-async def send_key(name: str, req: SendKeyRequest):
-    p = pm.get_profile(name)
-    if not p or p.get("status") != "running" or not p.get("cdp_port"):
+async def send_key(name: str, req: SendKeyRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    owner = None if (user and user.get("role") == "admin") else (user.get("username", "admin") if user else "admin")
+    p = pm.get_profile(name, owner=owner)
+    if not p:
+        raise HTTPException(status_code=404, detail="Profile not found or access denied.")
+    if p.get("status") != "running" or not p.get("cdp_port"):
         raise HTTPException(status_code=400, detail="Profile is not currently running.")
     try:
         return await cdp.send_key_event(int(p["cdp_port"]), req.key)
@@ -705,9 +975,13 @@ async def send_key(name: str, req: SendKeyRequest):
 
 
 @app.post("/api/profiles/{name}/mouse-action")
-async def mouse_action(name: str, req: MouseActionRequest):
-    p = pm.get_profile(name)
-    if not p or p.get("status") != "running" or not p.get("cdp_port"):
+async def mouse_action(name: str, req: MouseActionRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    owner = None if (user and user.get("role") == "admin") else (user.get("username", "admin") if user else "admin")
+    p = pm.get_profile(name, owner=owner)
+    if not p:
+        raise HTTPException(status_code=404, detail="Profile not found or access denied.")
+    if p.get("status") != "running" or not p.get("cdp_port"):
         raise HTTPException(status_code=400, detail="Profile is not currently running.")
     try:
         return await cdp.send_mouse_action(int(p["cdp_port"]), req.action)
@@ -716,10 +990,13 @@ async def mouse_action(name: str, req: MouseActionRequest):
 
 
 @app.post("/api/profiles/{name}/send-shortcut")
-async def send_shortcut(name: str, req: SendShortcutRequest):
-    """Send a keyboard shortcut with modifiers (e.g. Ctrl+C, Ctrl+V) via CDP."""
-    p = pm.get_profile(name)
-    if not p or p.get("status") != "running" or not p.get("cdp_port"):
+async def send_shortcut(name: str, req: SendShortcutRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    owner = None if (user and user.get("role") == "admin") else (user.get("username", "admin") if user else "admin")
+    p = pm.get_profile(name, owner=owner)
+    if not p:
+        raise HTTPException(status_code=404, detail="Profile not found or access denied.")
+    if p.get("status") != "running" or not p.get("cdp_port"):
         raise HTTPException(status_code=400, detail="Profile is not currently running.")
     if not req.key:
         raise HTTPException(status_code=400, detail="key is required.")
@@ -730,14 +1007,13 @@ async def send_shortcut(name: str, req: SendShortcutRequest):
 
 
 @app.post("/api/profiles/{name}/paste-clipboard")
-async def paste_clipboard(name: str, req: PasteClipboardRequest):
-    """
-    Paste local clipboard text into the focused element in the browser profile.
-    The browser page reads the clipboard via navigator.clipboard.readText() and
-    sends the text here; we inject it via CDP Input.insertText for instant paste.
-    """
-    p = pm.get_profile(name)
-    if not p or p.get("status") != "running" or not p.get("cdp_port"):
+async def paste_clipboard(name: str, req: PasteClipboardRequest, request: Request):
+    user = getattr(request.state, "user", None)
+    owner = None if (user and user.get("role") == "admin") else (user.get("username", "admin") if user else "admin")
+    p = pm.get_profile(name, owner=owner)
+    if not p:
+        raise HTTPException(status_code=404, detail="Profile not found or access denied.")
+    if p.get("status") != "running" or not p.get("cdp_port"):
         raise HTTPException(status_code=400, detail="Profile is not currently running.")
     if not req.text:
         return {"status": "empty", "length": 0}

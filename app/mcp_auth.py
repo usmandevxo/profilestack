@@ -43,7 +43,7 @@ def resolve_mcp_principal(headers):
             return store.get_principal(candidate)
         if bool(MCP_API_KEY) and hmac.compare_digest(candidate, MCP_API_KEY) and store.legacy_enabled():
             from app.key_policy import ALL_PERMISSIONS
-            return {'id': 'legacy', 'permissions': ALL_PERMISSIONS, 'profile_access': 'all', 'profiles': []}
+            return {'id': 'legacy', 'permissions': ALL_PERMISSIONS, 'profile_access': 'all', 'profiles': [], 'owner': 'admin', 'role': 'admin'}
         return None
     except (OSError, sqlite3.Error):
         # Storage failures never downgrade authentication to public access.

@@ -76,6 +76,42 @@ def authorize(tool, arguments):
         if permission in GLOBAL_PERMISSIONS:
             raise PermissionError(DENIED)
 
+    # Multi-tenant tenant boundary checks for non-admin accounts
+    if principal.get('role') != 'admin' and 'owner' in principal:
+        owner = principal.get('owner', 'admin').lower()
+        if permission in GLOBAL_PERMISSIONS:
+            raise PermissionError(DENIED)
+        if name:
+            from app import profile_manager as pm
+            prof = pm.get_profile(name)
+            if not prof or prof.get('owner', 'admin').lower() != owner:
+                raise PermissionError(DENIED)
+        if tool == 'create_profile':
+            from app import folder_manager as fm
+            from app import profile_manager as pm
+            target_folder = (arguments.get('folder') or 'default').strip().lower()
+            f_obj = fm.get_folder(target_folder)
+            if f_obj and f_obj.get('owner', 'admin').lower() != owner:
+                raise PermissionError(DENIED)
+            max_p = principal.get('max_profiles', 0)
+            if max_p > 0:
+                current_p = pm.list_profiles(owner=owner)
+                if len(current_p) >= max_p:
+                    raise PermissionError(DENIED)
+        elif tool in ('update_folder', 'delete_folder'):
+            from app import folder_manager as fm
+            fid = arguments.get('folder_id')
+            f_obj = fm.get_folder(fid)
+            if not f_obj or f_obj.get('owner', 'admin').lower() != owner:
+                raise PermissionError(DENIED)
+        elif tool == 'move_profile_to_folder':
+            from app import folder_manager as fm
+            target_folder = arguments.get('target_folder_id')
+            if target_folder:
+                f_obj = fm.get_folder(target_folder)
+                if not f_obj or f_obj.get('owner', 'admin').lower() != owner:
+                    raise PermissionError(DENIED)
+
     if principal['profile_access'] == 'selected':
         name = arguments.get('profile_name')
         if name and tool != 'create_profile' and name not in principal['profiles']:
@@ -104,9 +140,23 @@ def authorize(tool, arguments):
 
 def visible_profile(profile_or_name):
     p = current_principal.get()
-    if p is None or p['profile_access'] == 'all':
+    if p is None:
         return True
+
     name = profile_or_name if isinstance(profile_or_name, str) else profile_or_name.get('name')
+    if p.get('role') != 'admin' and 'owner' in p:
+        owner = p.get('owner', 'admin').lower()
+        if isinstance(profile_or_name, dict) and 'owner' in profile_or_name:
+            prof_owner = profile_or_name.get('owner', 'admin').lower()
+        else:
+            from app import profile_manager as pm
+            prof = pm.get_profile(name)
+            prof_owner = prof.get('owner', 'admin').lower() if prof else None
+        if prof_owner != owner:
+            return False
+
+    if p['profile_access'] == 'all':
+        return True
     if p['profile_access'] == 'selected':
         return name in p['profiles']
     if p['profile_access'] == 'group':

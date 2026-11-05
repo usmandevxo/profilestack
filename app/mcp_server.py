@@ -83,18 +83,19 @@ def secured_tool():
 @secured_tool()
 def list_folders() -> str:
     """List all profile folders with stats (total profiles, colors, descriptions)."""
-    folders = fm.list_folders_with_stats()
     principal = policy.current_principal.get()
+    owner = principal.get('owner', 'admin') if (principal and principal.get('role') != 'admin') else None
+    folders = fm.list_folders_with_stats(owner=owner)
     if principal and principal['profile_access'] == 'group':
         allowed_folders = set(principal.get('folders', []))
         folders = [f for f in folders if f['id'] in allowed_folders]
     elif principal and principal['profile_access'] == 'selected':
-        allowed = [p for p in pm.list_profiles() if policy.visible_profile(p)]
+        allowed = [p for p in pm.list_profiles(owner=owner) if policy.visible_profile(p)]
         counts = {}
         for p in allowed:
             folder = p.get('folder', 'default')
             counts[folder] = counts.get(folder, 0) + 1
-        folders = [{**f, 'total_profiles': counts[f['id']]} for f in folders if f['id'] in counts]
+        folders = [{**f, 'total_profiles': counts.get(f['id'], 0)} for f in folders if f['id'] in counts]
     return json.dumps(folders, indent=2)
 
 
@@ -107,11 +108,14 @@ def create_folder(
 ) -> str:
     """Create a new folder/category for organizing browser profiles."""
     try:
+        principal = policy.current_principal.get()
+        owner = principal.get('owner', 'admin') if principal else 'admin'
         res = fm.create_folder(
             name=name,
             description=description or "",
             color=color or "#2563eb",
             folder_id=folder_id,
+            owner=owner,
         )
         return json.dumps({"status": "success", "folder": res})
     except Exception as e:
@@ -165,14 +169,18 @@ def move_profile_to_folder(profile_name: str, target_folder_id: str) -> str:
 @secured_tool()
 def list_profiles(folder_id: Optional[str] = None) -> str:
     """List browser profiles, optionally filtered by folder_id. Returns status, ports, storage, and machine spoofing."""
-    profiles = [p for p in pm.list_profiles(folder_id=folder_id) if policy.visible_profile(p)]
+    principal = policy.current_principal.get()
+    owner = principal.get('owner', 'admin') if (principal and principal.get('role') != 'admin') else None
+    profiles = [p for p in pm.list_profiles(folder_id=folder_id, owner=owner) if policy.visible_profile(p)]
     return json.dumps(profiles, indent=2)
 
 
 @secured_tool()
 def get_profile_details(profile_name: str) -> str:
     """Get complete details, live metrics (CPU%, RAM), and ports of a single profile."""
-    p = pm.get_profile(profile_name)
+    principal = policy.current_principal.get()
+    owner = principal.get('owner', 'admin') if (principal and principal.get('role') != 'admin') else None
+    p = pm.get_profile(profile_name, owner=owner)
     if not p:
         return json.dumps({"error": f"Profile '{profile_name}' not found."})
     return json.dumps(p, indent=2)
@@ -194,6 +202,7 @@ def create_profile(
         if start_url:
             check_browser_url(start_url)
         principal = policy.current_principal.get()
+        owner = principal.get('owner', 'admin') if principal else 'admin'
         if principal and principal.get('profile_access') == 'group':
             allowed_folders = principal.get('folders', [])
             if not folder or folder == 'default':
@@ -208,6 +217,7 @@ def create_profile(
             start_url=start_url or "",
             host_mount=host_mount or "",
             note=note or "",
+            owner=owner,
         )
         principal = policy.current_principal.get()
         if principal and principal['profile_access'] == 'selected':

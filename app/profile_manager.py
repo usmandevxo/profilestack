@@ -29,6 +29,9 @@ def _load_registry() -> dict:
                     if "folder" not in item:
                         item["folder"] = fm.DEFAULT_FOLDER_ID
                         changed = True
+                    if "owner" not in item:
+                        item["owner"] = "admin"
+                        changed = True
                 if changed:
                     _save_registry(data)
                 return data
@@ -75,13 +78,17 @@ def _read_machine_signature(profile_dir: Path) -> dict:
         return {}
 
 
-def list_profiles(folder_id: Optional[str] = None) -> List[dict]:
+def list_profiles(folder_id: Optional[str] = None, owner: Optional[str] = None) -> List[dict]:
     reg = _load_registry()
     statuses = _docker.all_container_telemetry()
     all_folders = {f["id"]: f for f in fm.load_folders()}
     profiles = []
 
     for name, item in reg.items():
+        prof_owner = item.get("owner", "admin")
+        if owner and prof_owner.lower() != owner.strip().lower():
+            continue
+
         prof_folder = item.get("folder", fm.DEFAULT_FOLDER_ID)
         if folder_id and folder_id != "all" and prof_folder != folder_id:
             continue
@@ -99,6 +106,7 @@ def list_profiles(folder_id: Optional[str] = None) -> List[dict]:
             "folder": prof_folder,
             "folder_name": f_info.get("name", "General"),
             "folder_color": f_info.get("color", "#64748b"),
+            "owner": prof_owner,
             "proxy": item.get("proxy", ""),
             "start_url": item.get("start_url", ""),
             "host_mount": item.get("host_mount", ""),
@@ -114,12 +122,17 @@ def list_profiles(folder_id: Optional[str] = None) -> List[dict]:
     return sorted(profiles, key=lambda x: x["name"].lower())
 
 
-def get_profile(name: str) -> Optional[dict]:
+def get_profile(name: str, owner: Optional[str] = None) -> Optional[dict]:
     name = validate_profile_name(name)
     reg = _load_registry()
     item = reg.get(name)
     if not item:
         return None
+
+    prof_owner = item.get("owner", "admin")
+    if owner and prof_owner.lower() != owner.strip().lower():
+        return None
+
     prof_folder = item.get("folder", fm.DEFAULT_FOLDER_ID)
     f_info = fm.get_folder(prof_folder) or fm.DEFAULT_FOLDER
     p_dir = Path(item.get("path", str(PROFILES_DIR / name)))
@@ -131,6 +144,7 @@ def get_profile(name: str) -> Optional[dict]:
         "folder": prof_folder,
         "folder_name": f_info.get("name", "General"),
         "folder_color": f_info.get("color", "#64748b"),
+        "owner": prof_owner,
         "proxy": item.get("proxy", ""),
         "start_url": item.get("start_url", ""),
         "host_mount": item.get("host_mount", ""),
@@ -153,16 +167,39 @@ def create_profile(
     host_mount: str = "",
     note: str = "",
     folder: str = fm.DEFAULT_FOLDER_ID,
+    owner: str = "admin",
 ) -> dict:
     name = validate_profile_name(name)
     folder = (folder or fm.DEFAULT_FOLDER_ID).strip().lower()
-    
-    # Ensure target folder exists
-    if not fm.get_folder(folder):
+    owner = (owner or "admin").strip()
+
+    # Check user profile quota if applicable
+    try:
+        from app import auth_manager as auth
+        user_data = auth.get_user(owner)
+        if user_data:
+            max_p = user_data.get("mcp_access", {}).get("max_profiles", 0)
+            if max_p > 0:
+                current_count = len(list_profiles(owner=owner))
+                if current_count >= max_p:
+                    raise ValueError(f"Profile creation quota reached for user '{owner}' (maximum {max_p} profiles allowed).")
+    except ValueError:
+        raise
+    except Exception:
+        pass
+
+    # Ensure target folder exists and belongs to owner (or admin)
+    folder_obj = fm.get_folder(folder)
+    if not folder_obj:
         try:
-            fm.create_folder(name=folder, folder_id=folder)
+            fm.create_folder(name=folder, folder_id=folder, owner=owner)
         except Exception:
             folder = fm.DEFAULT_FOLDER_ID
+    else:
+        if owner.lower() != "admin" and folder_obj.get("owner", "admin").lower() != owner.lower():
+            # Fall back to user's default folder
+            user_folders = fm.load_folders(owner=owner)
+            folder = user_folders[0]["id"] if user_folders else fm.DEFAULT_FOLDER_ID
 
     reg = _load_registry()
     if name in reg:
@@ -170,7 +207,6 @@ def create_profile(
 
     p_dir = safe_profile_path(name, folder=folder)
     if p_dir.exists():
-        # Clean up any orphaned directory leftover from an earlier deleted profile
         force_remove_directory(p_dir)
 
     p_dir.mkdir(parents=True, exist_ok=True)
@@ -190,6 +226,7 @@ def create_profile(
         "name": name,
         "path": str(p_dir),
         "folder": folder,
+        "owner": owner,
         "proxy": (proxy or "").strip(),
         "start_url": (start_url or "").strip(),
         "host_mount": host_mount,
@@ -208,6 +245,7 @@ def update_profile(
     host_mount: Optional[str] = None,
     note: Optional[str] = None,
     folder: Optional[str] = None,
+    owner: Optional[str] = None,
 ) -> dict:
     name = validate_profile_name(name)
     reg = _load_registry()
@@ -215,6 +253,10 @@ def update_profile(
         raise ValueError(f"Profile '{name}' does not exist.")
 
     entry = reg[name]
+    prof_owner = entry.get("owner", "admin")
+    if owner and prof_owner.lower() != owner.strip().lower():
+        raise PermissionError(f"Access denied: profile '{name}' belongs to another user.")
+
     if proxy is not None:
         entry["proxy"] = proxy.strip()
     if start_url is not None:
@@ -230,21 +272,26 @@ def update_profile(
         entry["note"] = note.strip()
     if folder is not None:
         folder = folder.strip().lower()
-        if not fm.get_folder(folder):
+        folder_obj = fm.get_folder(folder)
+        if not folder_obj:
             try:
-                fm.create_folder(name=folder, folder_id=folder)
+                fm.create_folder(name=folder, folder_id=folder, owner=prof_owner)
             except Exception:
                 folder = fm.DEFAULT_FOLDER_ID
+        elif owner and folder_obj.get("owner", "admin").lower() != prof_owner.lower():
+            raise PermissionError(f"Access denied: folder '{folder}' belongs to another user.")
         entry["folder"] = folder
 
     _save_registry(reg)
     return entry
 
 
-def move_profile_to_folder(name: str, target_folder: str) -> dict:
+def move_profile_to_folder(name: str, target_folder: str, owner: Optional[str] = None) -> dict:
     name = validate_profile_name(name)
     target_folder = (target_folder or fm.DEFAULT_FOLDER_ID).strip().lower()
-    if not fm.get_folder(target_folder):
+    
+    target_f_obj = fm.get_folder(target_folder)
+    if not target_f_obj:
         raise ValueError(f"Target folder '{target_folder}' does not exist.")
 
     reg = _load_registry()
@@ -252,6 +299,13 @@ def move_profile_to_folder(name: str, target_folder: str) -> dict:
         raise ValueError(f"Profile '{name}' does not exist.")
 
     entry = reg[name]
+    prof_owner = entry.get("owner", "admin")
+    if owner and prof_owner.lower() != owner.strip().lower():
+        raise PermissionError(f"Access denied: profile '{name}' belongs to another user.")
+
+    if owner and target_f_obj.get("owner", "admin").lower() != prof_owner.lower():
+        raise PermissionError(f"Access denied: destination folder '{target_folder}' belongs to another user.")
+
     old_folder = entry.get("folder", fm.DEFAULT_FOLDER_ID)
     if old_folder == target_folder:
         return {"status": "unchanged", "name": name, "folder": target_folder}
@@ -292,19 +346,25 @@ def move_profile_to_folder(name: str, target_folder: str) -> dict:
     }
 
 
-def delete_profile(name: str) -> dict:
+def delete_profile(name: str, owner: Optional[str] = None) -> dict:
     name = validate_profile_name(name)
+    reg = _load_registry()
+    entry = reg.get(name)
+    if not entry:
+        raise ValueError(f"Profile '{name}' does not exist.")
+
+    prof_owner = entry.get("owner", "admin")
+    if owner and prof_owner.lower() != owner.strip().lower():
+        raise PermissionError(f"Access denied: profile '{name}' belongs to another user.")
+
     _docker.stop_profile(name)
     _docker.remove_profile_container(name)
 
-    reg = _load_registry()
-    entry = reg.pop(name, None)
+    reg.pop(name, None)
     _save_registry(reg)
 
     deleted_paths = set()
-
-    # 1. If entry had an explicit path recorded in registry, completely remove it
-    if entry and entry.get("path"):
+    if entry.get("path"):
         target_path = Path(entry["path"]).resolve()
         try:
             if target_path.is_relative_to(PROFILES_DIR.resolve()) and target_path.exists():
@@ -315,7 +375,6 @@ def delete_profile(name: str) -> dict:
                 force_remove_directory(target_path)
                 deleted_paths.add(str(target_path))
 
-    # 2. Check all potential profile disk locations across root and folder subdirectories
     candidates = [PROFILES_DIR / name]
     try:
         candidates.extend(list(PROFILES_DIR.glob(f"*/{name}")))
@@ -340,13 +399,17 @@ def delete_profile(name: str) -> dict:
     return {"status": "deleted", "name": name}
 
 
-def start_profile(name: str) -> dict:
+def start_profile(name: str, owner: Optional[str] = None) -> dict:
     name = validate_profile_name(name)
     reg = _load_registry()
     if name not in reg:
         raise ValueError(f"Profile '{name}' not found.")
 
     entry = reg[name]
+    prof_owner = entry.get("owner", "admin")
+    if owner and prof_owner.lower() != owner.strip().lower():
+        raise PermissionError(f"Access denied: profile '{name}' belongs to another user.")
+
     return _docker.start_profile(
         profile_name=name,
         profile_dir=entry.get("path", str(PROFILES_DIR / name)),
@@ -356,25 +419,33 @@ def start_profile(name: str) -> dict:
     )
 
 
-def stop_profile(name: str) -> dict:
+def stop_profile(name: str, owner: Optional[str] = None) -> dict:
     name = validate_profile_name(name)
     reg = _load_registry()
-    p_dir = reg.get(name, {}).get("path", "")
+    if name not in reg:
+        raise ValueError(f"Profile '{name}' not found.")
+
+    entry = reg[name]
+    prof_owner = entry.get("owner", "admin")
+    if owner and prof_owner.lower() != owner.strip().lower():
+        raise PermissionError(f"Access denied: profile '{name}' belongs to another user.")
+
+    p_dir = entry.get("path", "")
     return _docker.stop_profile(name, profile_dir=p_dir)
 
 
-def restart_profile(name: str) -> dict:
+def restart_profile(name: str, owner: Optional[str] = None) -> dict:
     name = validate_profile_name(name)
-    stop_profile(name)
+    stop_profile(name, owner=owner)
     time.sleep(0.5)
-    return start_profile(name)
+    return start_profile(name, owner=owner)
 
 
-def system_telemetry() -> dict:
+def system_telemetry(owner: Optional[str] = None) -> dict:
     cpu_percent = psutil.cpu_percent(interval=None)
     mem = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
-    profiles = list_profiles()
+    profiles = list_profiles(owner=owner)
     running_count = sum(1 for p in profiles if p["status"] == "running")
     total_storage_mb = sum(p["size_mb"] for p in profiles)
 
